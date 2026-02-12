@@ -31,8 +31,11 @@ User starts     →  summary auto-injected into
 fresh session      new context window
 ```
 
-Native compaction at 95% remains as a safety net
-(`CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=95`).
+**Important:** You must push Claude Code's native
+auto-compaction to 95% so it doesn't fight the
+plugin. Without this, native compaction fires at
+~90% and disrupts the background compaction cycle.
+See [Setup](#setup-full-mode).
 
 ### Basic Mode (fallback)
 
@@ -81,6 +84,16 @@ Add to your `~/.claude/settings.json`:
 ```
 
 Adjust the path to wherever the plugin is installed.
+
+**`CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=95` is required.**
+Claude Code's native auto-compaction defaults to ~90%.
+Without pushing it to 95%, native compaction fires
+before seamless-claude's wrap-up threshold (also 90%),
+meaning you'll still get the disruptive in-line
+compaction instead of the background one. The 95%
+threshold acts as a safety net — it only fires if
+everything else has failed.
+
 The statusline shows context usage after every
 response:
 
@@ -206,11 +219,11 @@ variables for tuning:
 | `SEAMLESS_HOOK_TIMEOUT` | `60` | Per-hook timeout (s) |
 | `SEAMLESS_DISPLAY_CMD` | — | Custom statusline command |
 
-Also set in `settings.json`:
+**Required** in `settings.json`:
 
 | Variable | Value | Purpose |
 |----------|-------|---------|
-| `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` | `95` | Safety net |
+| `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` | `95` | Push native compaction out of the way |
 
 ## Cross-session resume
 
@@ -310,6 +323,46 @@ The compactor handles failure gracefully:
   statusline shows ❌ within 10 minutes and Claude
   is notified on the next prompt with the last log
   line and log path
+
+## Token usage
+
+seamless-claude adds one extra API call per
+compaction cycle: a `claude -p` call using the
+Sonnet model to generate the structured summary.
+This is the same mechanism Claude Code uses for
+native compaction, but it runs in the background
+instead of blocking your session.
+
+**What it costs:**
+
+- One Sonnet call per compaction (~50-150K input
+  tokens for the transcript, ~2-5K output tokens
+  for the summary)
+- Roughly $0.15-0.50 per compaction depending on
+  session length
+- A retry (if the first attempt fails) halves the
+  transcript, so roughly half the cost again
+
+**What you get back:**
+
+- No idle time during compaction (3+ minutes saved
+  per cycle)
+- Structured summaries preserve more technical
+  detail than native compaction
+- Cross-session resume means less context re-reading
+  at the start of new sessions
+
+Native compaction still fires at 95% as a safety
+net. When it does, Claude Code performs its own
+summarisation. The plugin's summary is injected
+alongside it via the SessionStart hook, so you
+get both — but the plugin's structured summary is
+typically more useful.
+
+**Net effect:** slightly more tokens per session,
+but significantly more productive use of those
+tokens. The background compaction cost is roughly
+equivalent to one medium-length Claude response.
 
 ## How it compares
 
