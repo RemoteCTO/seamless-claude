@@ -1,17 +1,19 @@
 #!/usr/bin/env node
 /**
- * UserPromptSubmit hook — wrap-up injector.
+ * UserPromptSubmit hook — injector.
  *
- * Fires before every user prompt. If the statusline
- * has flagged context as critically full (wrapup_at
- * set in state), injects a one-time wrap-up instruction
- * into Claude's context via stdout.
+ * Fires before every user prompt. Injects one-time
+ * messages into Claude's context:
+ * - Wrap-up instruction when context critically full
+ * - Error notification when compaction failed
  */
 
-import { validateSessionId } from '../lib/config.mjs'
+import { existsSync, readFileSync } from 'node:fs'
+import { sessionPaths, validateSessionId } from '../lib/config.mjs'
+import { isLockStale } from '../lib/lockfile.mjs'
 import { readState, writeState } from '../lib/state.mjs'
+import { lastLogLine } from '../lib/statusline.mjs'
 
-// Reads all stdin into a string. Returns Promise<string>.
 async function readStdin() {
   const chunks = []
   for await (const chunk of process.stdin) {
@@ -27,36 +29,63 @@ async function main() {
   try {
     payload = JSON.parse(input)
   } catch {
-    return // Invalid JSON → exit silently
+    return
   }
 
   const { session_id: sessionId } = payload
-  if (!sessionId) {
-    return // Missing session_id → exit silently
-  }
+  if (!sessionId) return
 
   let safeId
   try {
     safeId = validateSessionId(sessionId)
   } catch {
-    return // Invalid session_id → exit silently
+    return
   }
 
   const state = readState(safeId)
+  const paths = sessionPaths(safeId)
 
-  // Only inject if wrapup_at is set AND not already injected
+  // Error notification (compactor died)
+  if (
+    state.compact_at &&
+    !state.error_notified &&
+    !existsSync(paths.md) &&
+    (!existsSync(paths.lock) || isLockStale(paths.lock))
+  ) {
+    let detail = 'No log available.'
+    if (existsSync(paths.log)) {
+      try {
+        const log = readFileSync(paths.log, 'utf8')
+        detail = lastLogLine(log) || detail
+      } catch {
+        // Log read failed — use default
+      }
+    }
+
+    process.stdout.write(
+      `[seamless-claude] Background compaction failed.\n\nLast log entry: ${detail}\nFull log: ${paths.log}\n`,
+    )
+
+    state.error_notified = true
+    writeState(safeId, state)
+    return
+  }
+
+  // Wrap-up injection (context critically full)
   if (state.wrapup_at && !state.wrapup_injected) {
-    process.stdout.write(`[seamless-claude] Context window is critically full.
+    process.stdout.write(
+      '[seamless-claude] Context window is ' +
+        'critically full.\n\n' +
+        'A session summary has been prepared in ' +
+        'the background.\n' +
+        'Please complete your current task, then ' +
+        'tell the user\n' +
+        'to start a fresh session. Their context ' +
+        'will be\n' +
+        'automatically restored.\n\n' +
+        'Do not start new tasks.\n',
+    )
 
-A session summary has been prepared in the background.
-Please complete your current task, then tell the user
-to start a fresh session. Their context will be
-automatically restored.
-
-Do not start new tasks.
-`)
-
-    // Mark as injected to prevent repetition
     state.wrapup_injected = true
     writeState(safeId, state)
   }

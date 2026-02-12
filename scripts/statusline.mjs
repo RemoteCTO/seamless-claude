@@ -12,7 +12,12 @@
  */
 
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -31,6 +36,11 @@ import {
   shouldWrapUp,
   writeState,
 } from '../lib/state.mjs'
+import {
+  formatLine,
+  lastLogLine,
+  resolveStatus,
+} from '../lib/statusline.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const DISPLAY_CMD = process.env.SEAMLESS_DISPLAY_CMD
@@ -41,27 +51,6 @@ async function readStdin() {
     chunks.push(chunk)
   }
   return Buffer.concat(chunks).toString('utf8')
-}
-
-function resolveStatus(state, pct, paths) {
-  if (pct >= WRAPUP_PCT) return 'wrapup'
-  if (state.compact_at && existsSync(paths.md)) {
-    return 'ready'
-  }
-  if (state.compact_at) return 'compacting'
-  return 'idle'
-}
-
-function buildBar(pct) {
-  const filled = Math.round((pct / 100) * 20)
-  return '█'.repeat(filled) + '░'.repeat(20 - filled)
-}
-
-const STATUS_ICONS = {
-  idle: '',
-  compacting: '🔄',
-  ready: '✅',
-  wrapup: '⚠️',
 }
 
 function writeStatus(data) {
@@ -83,15 +72,6 @@ function runDisplayCmd(rawStdin, env) {
     return true
   }
   return false
-}
-
-function fallbackLine(pct, status, shortId) {
-  const bar = buildBar(pct)
-  const icon = STATUS_ICONS[status] || ''
-  const parts = [`seamless: ${pct.toFixed(0)}% ${bar}`]
-  if (icon) parts.push(icon)
-  if (status !== 'idle') parts.push(shortId)
-  console.log(parts.join(' '))
 }
 
 const FALLBACK = 'seamless: --% ░░░░░░░░░░░░░░░░░░░░'
@@ -169,17 +149,31 @@ async function main() {
 
   // --- Status ---
 
-  const status = resolveStatus(state, pct, paths)
-  const summaryPath = existsSync(paths.md) ? paths.md : ''
+  const summaryExists = existsSync(paths.md)
+  const lockStale = !existsSync(paths.lock) || isLockStale(paths.lock)
+  const status = resolveStatus(state, pct, summaryExists, lockStale)
+  const summaryPath = summaryExists ? paths.md : ''
 
-  writeStatus({
+  const statusData = {
     pct,
     status,
     session_id: validatedId,
     session_short: validatedId.slice(0, 8),
     summary_path: summaryPath,
     updated_at: new Date().toISOString(),
-  })
+  }
+
+  if (status === 'error') {
+    statusData.log_path = paths.log
+    try {
+      const log = readFileSync(paths.log, 'utf8')
+      statusData.error_message = lastLogLine(log)
+    } catch {
+      statusData.error_message = 'Compaction failed (no log)'
+    }
+  }
+
+  writeStatus(statusData)
 
   // --- Display ---
 
@@ -194,7 +188,7 @@ async function main() {
     if (ok) return
   }
 
-  fallbackLine(pct, status, validatedId.slice(0, 8))
+  console.log(formatLine(pct, status, validatedId.slice(0, 8)))
 }
 
 main().catch(() => {

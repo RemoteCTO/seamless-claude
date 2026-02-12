@@ -86,11 +86,21 @@ response:
 
 ```
 seamless: 45% █████████░░░░░░░░░░░
-seamless: 73% ██████████████░░░░░░ 🔄
-seamless: 92% ██████████████████░░ ⚠️
+seamless: 73% ██████████████░░░░░░ 🔄 a1b2c3d4
+seamless: 80% ████████████████░░░░ ✅ a1b2c3d4
+seamless: 80% ████████████████░░░░ ❌ a1b2c3d4
+seamless: 92% ██████████████████░░ ⚠️ a1b2c3d4
 ```
 
-Icons: 🔄 compacting, ✅ summary ready, ⚠️ wrap-up.
+The session hash (first 8 chars of ID) appears once
+compaction starts. Icons:
+
+| Icon | Status | Meaning |
+|------|--------|---------|
+| 🔄 | `compacting` | Background compaction running |
+| ✅ | `ready` | Summary ready for resume |
+| ❌ | `error` | Compaction failed |
+| ⚠️ | `wrapup` | Context critical, finishing up |
 
 For Basic Mode, skip the statusline config entirely.
 
@@ -110,7 +120,7 @@ Your command receives:
 | Env var | Example | Description |
 |---------|---------|-------------|
 | `SEAMLESS_PCT` | `73.5` | Context usage % |
-| `SEAMLESS_STATUS` | `compacting` | idle, compacting, ready, wrapup |
+| `SEAMLESS_STATUS` | `compacting` | idle, compacting, ready, error, wrapup |
 | `SEAMLESS_SESSION_ID` | `a1b2...` | Full session UUID |
 | `SEAMLESS_SESSION_SHORT` | `a1b2c3d4` | First 8 chars |
 | `SEAMLESS_SUMMARY_PATH` | `/path/to/summary.md` | Empty if not ready |
@@ -120,7 +130,7 @@ Example `settings.json`:
 ```json
 {
   "env": {
-    "SEAMLESS_DISPLAY_CMD": "ruby ~/.claude/statusline.rb",
+    "SEAMLESS_DISPLAY_CMD": "/path/to/your/statusline.sh",
     "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "95"
   },
   "statusLine": {
@@ -130,16 +140,16 @@ Example `settings.json`:
 }
 ```
 
-Your script can then incorporate the status:
+Your script can read the env vars to incorporate
+seamless status into its own display. For example,
+in a shell script:
 
-```ruby
-# In your existing statusline script
-status = ENV['SEAMLESS_STATUS']
-short  = ENV['SEAMLESS_SESSION_SHORT']
-icon = { 'compacting' => '🔄',
-         'ready' => '✅',
-         'wrapup' => '⚠️' }[status]
-# Add to your display: "✅ a1b2c3d4"
+```bash
+#!/bin/sh
+# Read seamless status from env
+STATUS="$SEAMLESS_STATUS"
+SHORT="$SEAMLESS_SESSION_SHORT"
+# ... include in your output
 ```
 
 If your command exits non-zero or produces no output,
@@ -159,6 +169,16 @@ after every response:
   "session_short": "a1b2c3d4",
   "summary_path": "",
   "updated_at": "2026-02-12T15:30:00Z"
+}
+```
+
+On error, additional fields appear:
+
+```json
+{
+  "status": "error",
+  "log_path": "~/.seamless-claude/sessions/a1b2...log",
+  "error_message": "Attempt 2 failed: timeout"
 }
 ```
 
@@ -286,6 +306,10 @@ The compactor handles failure gracefully:
   characters to stay within shell limits
 - **One-shot triggers**: Each threshold fires once
   per session (state tracking prevents re-triggers)
+- **Error detection**: If the compactor dies, the
+  statusline shows ❌ within 10 minutes and Claude
+  is notified on the next prompt with the last log
+  line and log path
 
 ## How it compares
 
