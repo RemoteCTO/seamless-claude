@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { describe, it } from 'node:test'
+import { fileURLToPath } from 'node:url'
 import { discoverHooks, runAllHooks, runHook } from '../lib/hooks.mjs'
 
-const FIXTURES = join(import.meta.dirname, 'fixtures', 'hooks')
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const FIXTURES = join(__dirname, 'fixtures', 'hooks')
 
 describe('hooks', () => {
   describe('discoverHooks', () => {
