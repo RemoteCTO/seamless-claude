@@ -19,18 +19,24 @@ if (!existsSync(DATA_DIR)) {
   process.exit(0)
 }
 
-// Count sessions for user feedback
+// Count sessions and state files for user feedback
 const sessionDir = join(DATA_DIR, 'sessions')
+const stateDir = join(DATA_DIR, 'state')
 let sessionCount = 0
+let stateCount = 0
 if (existsSync(sessionDir)) {
   sessionCount = readdirSync(sessionDir).filter((f) =>
     f.endsWith('.md'),
   ).length
 }
+if (existsSync(stateDir)) {
+  stateCount = readdirSync(stateDir).length
+}
 
 process.stderr.write(
   `seamless-claude: removing ${DATA_DIR} ` +
-    `(${sessionCount} session summaries)\n`,
+    `(${sessionCount} sessions, ` +
+    `${stateCount} state files)\n`,
 )
 
 rmSync(DATA_DIR, { recursive: true, force: true })
