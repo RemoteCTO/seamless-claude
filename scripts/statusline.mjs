@@ -1,22 +1,30 @@
 #!/usr/bin/env node
 /**
- * Statusline hook handler.
+ * Statusline monitor.
  *
- * Receives session JSON on stdin from Claude Code after
- * every response. Outputs a display line showing context
- * usage, and triggers compaction/wrapup when thresholds
- * are crossed.
+ * Receives session JSON on stdin from Claude Code
+ * after every response. Monitors context usage,
+ * triggers background compaction and wrapup, then
+ * produces the statusline display.
  *
- * Sync hook — must output display line and exit quickly.
+ * Display is either a built-in bar or delegated to
+ * a user command via SEAMLESS_DISPLAY_CMD.
  */
 
-import { spawn } from 'node:child_process'
-import { existsSync, readdirSync } from 'node:fs'
+import { spawn, spawnSync } from 'node:child_process'
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  writeFileSync,
+} from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   COMPACT_PCT,
+  DATA_DIR,
+  STATUS_PATH,
   WRAPUP_PCT,
   sessionPaths,
   validateSessionId,
@@ -31,6 +39,7 @@ import {
 } from '../lib/state.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
+const DISPLAY_CMD = process.env.SEAMLESS_DISPLAY_CMD
 
 async function readStdin() {
   const chunks = []
@@ -40,46 +49,79 @@ async function readStdin() {
   return Buffer.concat(chunks).toString('utf8')
 }
 
-// Find transcript by globbing ~/.claude/projects/*/{sessionId}.jsonl
 function findTranscript(sessionId) {
   const projectsDir = join(homedir(), '.claude', 'projects')
   if (!existsSync(projectsDir)) return null
-
   try {
-    const hashes = readdirSync(projectsDir)
-    for (const hash of hashes) {
-      const candidate = join(projectsDir, hash, `${sessionId}.jsonl`)
-      if (existsSync(candidate)) return candidate
+    for (const hash of readdirSync(projectsDir)) {
+      const p = join(projectsDir, hash, `${sessionId}.jsonl`)
+      if (existsSync(p)) return p
     }
   } catch {
     return null
   }
-
   return null
 }
 
-// Build 20-char bar: █ for used, ░ for free
+function resolveStatus(state, pct, paths) {
+  if (pct >= WRAPUP_PCT) return 'wrapup'
+  if (state.compact_at && existsSync(paths.md)) {
+    return 'ready'
+  }
+  if (state.compact_at) return 'compacting'
+  return 'idle'
+}
+
 function buildBar(pct) {
   const filled = Math.round((pct / 100) * 20)
-  const empty = 20 - filled
-  return '█'.repeat(filled) + '░'.repeat(empty)
+  return '█'.repeat(filled) + '░'.repeat(20 - filled)
 }
 
-// Return status icon based on state
-function statusIcon(state, pct, paths) {
-  if (pct >= WRAPUP_PCT) return '⚠️'
-  if (state.compact_at && existsSync(paths.md)) return '✅'
-  if (state.compact_at) return '🔄'
-  return ''
+const STATUS_ICONS = {
+  idle: '',
+  compacting: '🔄',
+  ready: '✅',
+  wrapup: '⚠️',
 }
+
+function writeStatus(data) {
+  mkdirSync(DATA_DIR, { recursive: true })
+  writeFileSync(STATUS_PATH, JSON.stringify(data), {
+    mode: 0o600,
+  })
+}
+
+function runDisplayCmd(rawStdin, env) {
+  const result = spawnSync('sh', ['-c', DISPLAY_CMD], {
+    input: rawStdin,
+    env: { ...process.env, ...env },
+    timeout: 5000,
+    maxBuffer: 10 * 1024,
+  })
+  if (result.status === 0 && result.stdout?.length) {
+    process.stdout.write(result.stdout)
+    return true
+  }
+  return false
+}
+
+function fallbackLine(pct, status) {
+  const bar = buildBar(pct)
+  const icon = STATUS_ICONS[status] || ''
+  const suffix = icon ? ` ${icon}` : ''
+  console.log(`seamless: ${pct.toFixed(0)}% ${bar}${suffix}`)
+}
+
+const FALLBACK = 'seamless: --% ░░░░░░░░░░░░░░░░░░░░'
 
 async function main() {
+  let rawStdin
   let input
   try {
-    const raw = await readStdin()
-    input = JSON.parse(raw)
+    rawStdin = await readStdin()
+    input = JSON.parse(rawStdin)
   } catch {
-    console.log('seamless: --% ░░░░░░░░░░░░░░░░░░░░')
+    console.log(FALLBACK)
     return
   }
 
@@ -88,7 +130,7 @@ async function main() {
   const pct = input.context_window?.used_percentage
 
   if (!sessionId || pct === undefined) {
-    console.log('seamless: --% ░░░░░░░░░░░░░░░░░░░░')
+    console.log(FALLBACK)
     return
   }
 
@@ -96,25 +138,22 @@ async function main() {
   try {
     validatedId = validateSessionId(sessionId)
   } catch {
-    console.log('seamless: --% ░░░░░░░░░░░░░░░░░░░░')
+    console.log(FALLBACK)
     return
   }
 
   const state = readState(validatedId)
   const paths = sessionPaths(validatedId)
 
-  // Trigger compaction if threshold crossed
+  // --- Monitoring ---
+
   if (shouldCompact(state, pct, COMPACT_PCT)) {
     const transcript = findTranscript(validatedId)
     if (transcript) {
-      // Check for stale lock
       if (!existsSync(paths.lock) || isLockStale(paths.lock)) {
-        // Acquire lock
         if (acquireLock(paths.lock)) {
           state.compact_at = new Date().toISOString()
           writeState(validatedId, state)
-
-          // Spawn compactor detached
           const compactor = join(__dirname, 'compactor.mjs')
           const child = spawn(
             'node',
@@ -131,32 +170,52 @@ async function main() {
     }
   }
 
-  // Trigger wrapup if threshold crossed
   if (shouldWrapUp(state, pct, WRAPUP_PCT)) {
     state.wrapup_at = new Date().toISOString()
     writeState(validatedId, state)
-
     if (cwd) {
       try {
         createIntent(cwd, validatedId)
-      } catch (err) {
-        console.error(`Failed to create resume intent: ${err.message}`)
+      } catch {
+        // Intent creation failed — not fatal
       }
     }
   }
 
-  // Update last_pct
   state.last_pct = pct
   writeState(validatedId, state)
 
-  // Output display line
-  const bar = buildBar(pct)
-  const icon = statusIcon(state, pct, paths)
-  const iconStr = icon ? ` ${icon}` : ''
-  console.log(`seamless: ${pct.toFixed(0)}% ${bar}${iconStr}`)
+  // --- Status ---
+
+  const status = resolveStatus(state, pct, paths)
+  const summaryPath = existsSync(paths.md) ? paths.md : ''
+
+  writeStatus({
+    pct,
+    status,
+    session_id: validatedId,
+    session_short: validatedId.slice(0, 8),
+    summary_path: summaryPath,
+    updated_at: new Date().toISOString(),
+  })
+
+  // --- Display ---
+
+  if (DISPLAY_CMD) {
+    const ok = runDisplayCmd(rawStdin, {
+      SEAMLESS_PCT: String(pct),
+      SEAMLESS_STATUS: status,
+      SEAMLESS_SESSION_ID: validatedId,
+      SEAMLESS_SESSION_SHORT: validatedId.slice(0, 8),
+      SEAMLESS_SUMMARY_PATH: summaryPath,
+    })
+    if (ok) return
+  }
+
+  fallbackLine(pct, status)
 }
 
 main().catch(() => {
-  console.log('seamless: --% ░░░░░░░░░░░░░░░░░░░░')
+  console.log(FALLBACK)
   process.exit(0)
 })

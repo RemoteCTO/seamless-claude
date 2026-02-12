@@ -94,6 +94,77 @@ Icons: 🔄 compacting, ✅ summary ready, ⚠️ wrap-up.
 
 For Basic Mode, skip the statusline config entirely.
 
+### Custom statusline display
+
+If you already have a statusline script, set
+`SEAMLESS_DISPLAY_CMD` to delegate display to it.
+seamless-claude handles monitoring, then calls your
+command for the actual output.
+
+Your command receives:
+
+- **stdin**: the original Claude Code JSON (same
+  data your statusline already parses)
+- **env vars**: seamless-claude status
+
+| Env var | Example | Description |
+|---------|---------|-------------|
+| `SEAMLESS_PCT` | `73.5` | Context usage % |
+| `SEAMLESS_STATUS` | `compacting` | idle, compacting, ready, wrapup |
+| `SEAMLESS_SESSION_ID` | `a1b2...` | Full session UUID |
+| `SEAMLESS_SESSION_SHORT` | `a1b2c3d4` | First 8 chars |
+| `SEAMLESS_SUMMARY_PATH` | `/path/to/summary.md` | Empty if not ready |
+
+Example `settings.json`:
+
+```json
+{
+  "env": {
+    "SEAMLESS_DISPLAY_CMD": "ruby ~/.claude/statusline.rb",
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "95"
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "node ~/.claude/plugins/seamless-claude/scripts/statusline.mjs"
+  }
+}
+```
+
+Your script can then incorporate the status:
+
+```ruby
+# In your existing statusline script
+status = ENV['SEAMLESS_STATUS']
+short  = ENV['SEAMLESS_SESSION_SHORT']
+icon = { 'compacting' => '🔄',
+         'ready' => '✅',
+         'wrapup' => '⚠️' }[status]
+# Add to your display: "✅ a1b2c3d4"
+```
+
+If your command exits non-zero or produces no output,
+seamless-claude falls back to its built-in bar.
+
+### Status file
+
+Whether or not you use `SEAMLESS_DISPLAY_CMD`,
+seamless-claude writes `~/.seamless-claude/status.json`
+after every response:
+
+```json
+{
+  "pct": 73.5,
+  "status": "compacting",
+  "session_id": "a1b2c3d4-...",
+  "session_short": "a1b2c3d4",
+  "summary_path": "",
+  "updated_at": "2026-02-12T15:30:00Z"
+}
+```
+
+Any tooling can read this file — no need to
+integrate with the statusline at all.
+
 ## Requirements
 
 - Claude Code
@@ -113,6 +184,7 @@ variables for tuning:
 | `SEAMLESS_TIMEOUT` | `300` | Compaction timeout (s) |
 | `SEAMLESS_MAX_CHARS` | `400000` | Max transcript chars |
 | `SEAMLESS_HOOK_TIMEOUT` | `60` | Per-hook timeout (s) |
+| `SEAMLESS_DISPLAY_CMD` | — | Custom statusline command |
 
 Also set in `settings.json`:
 
@@ -243,6 +315,7 @@ All data is stored locally under `~/.seamless-claude/`:
   state/              # per-session threshold state
     {session_id}.json
   hooks.d/            # user hook scripts
+  status.json         # current session status
   resume-intent.json  # cross-session handover
 ```
 
