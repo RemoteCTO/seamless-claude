@@ -13,220 +13,28 @@
  *        SEAMLESS_MAX_CHARS (default: 400000)
  */
 
-import { existsSync, createReadStream } from 'node:fs'
-import {
-  writeFile, unlink, mkdir, appendFile
-} from 'node:fs/promises'
-import { join } from 'node:path'
-import { homedir } from 'node:os'
 import { spawn } from 'node:child_process'
-import { createInterface } from 'node:readline'
+import { existsSync } from 'node:fs'
+import { appendFile, writeFile } from 'node:fs/promises'
+import { runClaude } from '../lib/claude.mjs'
+import {
+  TOOL_RESULT_MAX,
+  sessionPaths,
+  validateSessionId,
+} from '../lib/config.mjs'
+import { releaseLock } from '../lib/lockfile.mjs'
+import { parseTranscript } from '../lib/transcript.mjs'
+import { validateResult } from '../lib/validate.mjs'
 
 const SESSION_ID = process.argv[2]
 const TRANSCRIPT = process.argv[3]
 const MODEL = process.env.SEAMLESS_MODEL || 'sonnet'
-const TIMEOUT = parseInt(
-  process.env.SEAMLESS_TIMEOUT || '300', 10
-) * 1000
-const MAX_CHARS = parseInt(
-  process.env.SEAMLESS_MAX_CHARS || '400000', 10
+const TIMEOUT =
+  Number.parseInt(process.env.SEAMLESS_TIMEOUT || '300', 10) * 1000
+const MAX_CHARS = Number.parseInt(
+  process.env.SEAMLESS_MAX_CHARS || '400000',
+  10,
 )
-const TOOL_RESULT_MAX = 300
-const MIN_RESULT_LENGTH = 500
-
-const OUTPUT_DIR = join(
-  homedir(), '.seamless-claude', 'sessions'
-)
-const OUTPUT_FILE = join(
-  OUTPUT_DIR, `${SESSION_ID}.md`
-)
-const META_FILE = join(
-  OUTPUT_DIR, `${SESSION_ID}.json`
-)
-const LOG_FILE = join(
-  OUTPUT_DIR, `${SESSION_ID}.log`
-)
-const LOCKFILE = join(
-  OUTPUT_DIR, `${SESSION_ID}.lock`
-)
-
-const EXPECTED_SECTIONS = [
-  'Session Summary',
-  'Technical Context',
-  'Knowledge Extractions',
-  'Next Steps',
-  'Active Context'
-]
-
-async function log(msg) {
-  const ts = new Date().toISOString().slice(11, 19)
-  await appendFile(LOG_FILE, `[${ts}] ${msg}\n`)
-    .catch(() => {})
-}
-
-async function cleanupLock() {
-  await unlink(LOCKFILE).catch(() => {})
-}
-
-function validateResult(result) {
-  if (!result || result.trim().length === 0) {
-    return false
-  }
-  if (result.length < MIN_RESULT_LENGTH) return false
-  const found = EXPECTED_SECTIONS.filter(
-    s => result.includes(s)
-  ).length
-  return found >= 3
-}
-
-// --- Parse JSONL transcript ---
-
-async function parseTranscript(path) {
-  const conversation = []
-  let totalChars = 0
-  let bytesRead = 0
-
-  const rl = createInterface({
-    input: createReadStream(path, 'utf8'),
-    crlfDelay: Infinity
-  })
-
-  for await (const line of rl) {
-    bytesRead += Buffer.byteLength(line, 'utf8') + 1
-    let entry
-    try { entry = JSON.parse(line) } catch { continue }
-
-    if (entry.type === 'user') {
-      if (entry.isMeta) continue
-      const msg = entry.message?.content
-      if (!msg) continue
-
-      if (typeof msg === 'string') {
-        const text = msg.trim()
-        if (text) {
-          conversation.push(`USER: ${text}`)
-          totalChars += text.length
-        }
-      } else if (Array.isArray(msg)) {
-        for (const block of msg) {
-          if (block.type === 'text') {
-            const text = (block.text || '').trim()
-            if (text) {
-              conversation.push(`USER: ${text}`)
-              totalChars += text.length
-            }
-          } else if (block.type === 'tool_result') {
-            const raw = String(block.content || '')
-            const t = raw.length > TOOL_RESULT_MAX
-              ? raw.slice(0, TOOL_RESULT_MAX)
-                + '...[truncated]'
-              : raw
-            conversation.push(`TOOL_RESULT: ${t}`)
-            totalChars += t.length
-          }
-        }
-      }
-    } else if (entry.type === 'assistant') {
-      const msg = entry.message?.content
-      if (!Array.isArray(msg)) continue
-
-      for (const block of msg) {
-        if (block.type === 'text') {
-          const text = (block.text || '').trim()
-          if (text) {
-            conversation.push(`ASSISTANT: ${text}`)
-            totalChars += text.length
-          }
-        } else if (block.type === 'tool_use') {
-          const name = block.name
-          const inp = block.input || {}
-          let brief
-          switch (name) {
-            case 'Bash':
-              brief = String(
-                inp.command || ''
-              ).slice(0, 120)
-              break
-            case 'Read':
-              brief = String(inp.file_path || '')
-              break
-            case 'Write':
-            case 'Edit':
-              brief = `${inp.file_path || ''}`
-              break
-            case 'Glob':
-              brief = String(inp.pattern || '')
-              break
-            case 'Grep':
-              brief = `${inp.pattern} in ${inp.path}`
-              break
-            case 'WebSearch':
-              brief = String(inp.query || '')
-              break
-            case 'Task':
-              brief = `${inp.subagent_type}: `
-                + `${inp.description || ''}`
-              break
-            default:
-              brief = JSON.stringify(inp)
-                .slice(0, 100)
-          }
-          conversation.push(
-            `TOOL [${name}]: ${brief}`
-          )
-          totalChars += brief.length + name.length
-        }
-      }
-    }
-
-    if (totalChars > MAX_CHARS) break
-  }
-
-  return { conversation, totalChars, bytesRead }
-}
-
-// --- Call claude -p ---
-
-function runClaude(cmd, inputText) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(cmd[0], cmd.slice(1), {
-      stdio: ['pipe', 'pipe', 'pipe']
-    })
-
-    let stdout = ''
-    let stderr = ''
-    child.stdout.on('data', d => { stdout += d })
-    child.stderr.on('data', d => { stderr += d })
-
-    const timer = setTimeout(() => {
-      child.kill('SIGTERM')
-      reject(new Error(
-        `Timed out after ${TIMEOUT / 1000}s`
-      ))
-    }, TIMEOUT)
-
-    child.on('close', code => {
-      clearTimeout(timer)
-      if (code !== 0) {
-        reject(new Error(
-          `Exit ${code}: ${stderr.slice(0, 500)}`
-        ))
-      } else {
-        resolve(stdout)
-      }
-    })
-
-    child.on('error', err => {
-      clearTimeout(timer)
-      reject(err)
-    })
-
-    child.stdin.write(inputText)
-    child.stdin.end()
-  })
-}
-
-// --- Prompt ---
 
 const PROMPT = `You are a session continuity assistant. \
 Below is a Claude Code conversation transcript. \
@@ -275,7 +83,8 @@ Include any open questions or blockers.
 - The next session has NO conversation history — \
   this document IS the entire history`
 
-const SYSTEM_PROMPT = 'You are a session ' +
+const SYSTEM_PROMPT =
+  'You are a session ' +
   'summarisation assistant. You produce structured ' +
   'summaries of Claude Code conversation ' +
   'transcripts. Follow the instructions in the ' +
@@ -284,49 +93,66 @@ const SYSTEM_PROMPT = 'You are a session ' +
   'else. Just produce the requested structured ' +
   'output.'
 
-// --- Main ---
+let PATHS = null
+
+async function log(msg) {
+  if (!PATHS) return
+  const ts = new Date().toISOString().slice(11, 19)
+  await appendFile(PATHS.log, `[${ts}] ${msg}\n`).catch(() => {})
+}
 
 async function main() {
   if (!SESSION_ID || !TRANSCRIPT) {
-    console.error(
-      'Usage: compactor.mjs <session_id> <path>'
-    )
-    await cleanupLock()
+    console.error('Usage: compactor.mjs <session_id> <path>')
     process.exit(1)
   }
+
+  // Validate session ID
+  let validatedId
+  try {
+    validatedId = validateSessionId(SESSION_ID)
+  } catch (err) {
+    console.error(`Invalid session ID: ${err.message}`)
+    process.exit(1)
+  }
+
+  PATHS = sessionPaths(validatedId)
 
   if (!existsSync(TRANSCRIPT)) {
     await log(`Transcript not found: ${TRANSCRIPT}`)
-    await cleanupLock()
+    await releaseLock(PATHS.lock)
     process.exit(1)
   }
 
-  await mkdir(OUTPUT_DIR, { recursive: true })
   await log(`Starting compaction model=${MODEL}`)
   await log(`Transcript: ${TRANSCRIPT}`)
 
-  const {
-    conversation, totalChars, bytesRead
-  } = await parseTranscript(TRANSCRIPT)
+  const { conversation, totalChars, bytesRead } = await parseTranscript(
+    TRANSCRIPT,
+    { maxChars: MAX_CHARS, toolResultMax: TOOL_RESULT_MAX },
+  )
 
   if (conversation.length === 0) {
     await log('No conversation content found')
-    await cleanupLock()
+    await releaseLock(PATHS.lock)
     process.exit(1)
   }
 
   await log(
-    `Extracted ${conversation.length} entries, `
-    + `${totalChars} chars`
+    `Extracted ${conversation.length} entries, ${totalChars} chars`,
   )
 
   const transcriptText = conversation.join('\n\n')
   const cmd = [
-    'claude', '-p',
-    '--model', MODEL,
+    'claude',
+    '-p',
+    '--model',
+    MODEL,
     '--no-session-persistence',
-    '--output-format', 'text',
-    '--system-prompt', SYSTEM_PROMPT
+    '--output-format',
+    'text',
+    '--system-prompt',
+    SYSTEM_PROMPT,
   ]
 
   let result = null
@@ -334,45 +160,32 @@ async function main() {
     try {
       let input
       if (attempt === 1) {
-        input = `${PROMPT}\n\n---\n\n`
-          + `TRANSCRIPT `
-          + `(${conversation.length} entries):\n\n`
-          + transcriptText
+        input = `${PROMPT}\n\n---\n\nTRANSCRIPT (${conversation.length} entries):\n\n${transcriptText}`
       } else {
-        const half = Math.floor(
-          transcriptText.length / 2
-        )
+        const half = Math.floor(transcriptText.length / 2)
         const shortened = transcriptText.slice(-half)
-        input = `${PROMPT}\n\n---\n\n`
-          + `TRANSCRIPT (truncated, retry):\n\n`
-          + shortened
+        input = `${PROMPT}\n\n---\n\nTRANSCRIPT (truncated, retry):\n\n${shortened}`
         await log(
-          `Retry with ${input.length} chars `
-          + `(transcript halved)`
+          `Retry with ${input.length} chars (transcript halved)`,
         )
       }
 
-      await log(
-        `Attempt ${attempt}: calling claude -p`
-      )
-      const res = await runClaude(cmd, input)
+      await log(`Attempt ${attempt}: calling claude -p`)
+      const res = await runClaude(cmd, input, TIMEOUT)
 
       if (!validateResult(res)) {
         throw new Error(
-          'Output failed validation '
-          + `(length=${(res || '').length})`
+          `Output failed validation (length=${(res || '').length})`,
         )
       }
 
       result = res
       break
     } catch (err) {
-      await log(
-        `Attempt ${attempt} failed: ${err.message}`
-      )
+      await log(`Attempt ${attempt} failed: ${err.message}`)
       if (attempt >= 2) {
         await log('Giving up after 2 attempts')
-        await cleanupLock()
+        await releaseLock(PATHS.lock)
         process.exit(1)
       }
       await log('Retrying with halved transcript...')
@@ -383,59 +196,88 @@ async function main() {
 
   // Write summary
   const header = [
-    `<!-- seamless-claude: ${SESSION_ID} -->`,
+    `<!-- seamless-claude: ${validatedId} -->`,
     `<!-- generated: ${new Date().toISOString()} -->`,
     `<!-- model: ${MODEL} -->`,
     `<!-- entries: ${conversation.length} -->`,
-    ''
+    '',
   ].join('\n')
 
-  await writeFile(OUTPUT_FILE, header + '\n' + result)
-  await log(`Wrote summary to ${OUTPUT_FILE}`)
+  await writeFile(PATHS.md, `${header}\n${result}`, { mode: 0o600 })
+  await log(`Wrote summary to ${PATHS.md}`)
 
   // Write metadata
   const metadata = {
-    session_id: SESSION_ID,
+    session_id: validatedId,
     generated_at: new Date().toISOString(),
     model: MODEL,
     transcript_path: TRANSCRIPT,
     transcript_entries: conversation.length,
     transcript_chars: totalChars,
     transcript_byte_offset: bytesRead,
-    summary_chars: result.length
+    summary_chars: result.length,
   }
-  await writeFile(
-    META_FILE, JSON.stringify(metadata, null, 2)
-  )
+  await writeFile(PATHS.json, JSON.stringify(metadata, null, 2), {
+    mode: 0o600,
+  })
 
   // Run post-compact hook if configured
   const hookCmd = process.env.SEAMLESS_POST_HOOK
   if (hookCmd) {
     await log(`Running post-compact hook: ${hookCmd}`)
-    const expanded = hookCmd
-      .replace('%{output}', OUTPUT_FILE)
-      .replace('%{meta}', META_FILE)
-      .replace('%{session}', SESSION_ID)
-    const { execSync } = await import('node:child_process')
+
+    // Parse command and args safely
+    const parts = hookCmd.split(/\s+/)
+    const cmdParts = []
+    for (const part of parts) {
+      const replaced = part
+        .replace('%{output}', PATHS.md)
+        .replace('%{meta}', PATHS.json)
+        .replace('%{session}', validatedId)
+      cmdParts.push(replaced)
+    }
+
     try {
-      execSync(expanded, {
-        timeout: 30_000,
-        stdio: 'ignore'
+      const child = spawn(cmdParts[0], cmdParts.slice(1), {
+        stdio: 'ignore',
+        shell: false,
       })
+
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          child.kill('SIGTERM')
+          reject(new Error('Hook timeout after 30s'))
+        }, 30_000)
+
+        child.on('close', (code) => {
+          clearTimeout(timer)
+          if (code !== 0) {
+            reject(new Error(`Hook exit ${code}`))
+          } else {
+            resolve()
+          }
+        })
+
+        child.on('error', (err) => {
+          clearTimeout(timer)
+          reject(err)
+        })
+      })
+
       await log('Post-compact hook completed')
     } catch (err) {
-      await log(
-        `Post-compact hook failed: ${err.message}`
-      )
+      await log(`Post-compact hook failed: ${err.message}`)
     }
   }
 
-  await cleanupLock()
+  await releaseLock(PATHS.lock)
   await log('Compaction complete')
 }
 
 main().catch(async (err) => {
-  await log(`Fatal: ${err.message}`).catch(() => {})
-  await cleanupLock().catch(() => {})
+  if (PATHS) {
+    await log(`Fatal: ${err.message}`).catch(() => {})
+    await releaseLock(PATHS.lock).catch(() => {})
+  }
   process.exit(1)
 })

@@ -1,0 +1,4 @@
+not json at all
+{"type":"user","message":{"content":"valid line"}}
+{broken json
+{"type":"assistant","message":{"content":[{"type":"text","text":"also valid"}]}}

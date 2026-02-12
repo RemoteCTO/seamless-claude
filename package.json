@@ -1,0 +1,30 @@
+{
+  "name": "seamless-claude",
+  "version": "0.1.0",
+  "description": "Seamless session continuity for Claude Code.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write ."
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RemoteCTO/seamless-claude.git"
+  },
+  "keywords": [
+    "claude-code",
+    "claude-code-plugin",
+    "session-continuity",
+    "precompact"
+  ],
+  "author": "Ed Woodcock",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/RemoteCTO/seamless-claude/issues"
+  },
+  "homepage": "https://github.com/RemoteCTO/seamless-claude#readme",
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.0"
+  }
+}

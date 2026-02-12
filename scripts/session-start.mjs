@@ -13,13 +13,11 @@
 
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
-import { homedir } from 'node:os'
-
-const OUTPUT_DIR = join(
-  homedir(), '.seamless-claude', 'sessions'
-)
-const MAX_OUTPUT = 200_000
+import {
+  MAX_OUTPUT,
+  sessionPaths,
+  validateSessionId,
+} from '../lib/config.mjs'
 
 async function readStdin() {
   const chunks = []
@@ -40,12 +38,18 @@ async function main() {
   const sessionId = input.session_id
   if (!sessionId) process.exit(0)
 
-  const summaryPath = join(
-    OUTPUT_DIR, `${sessionId}.md`
-  )
-  if (!existsSync(summaryPath)) process.exit(0)
+  // Validate session ID, but don't crash on invalid
+  let validatedId
+  try {
+    validatedId = validateSessionId(sessionId)
+  } catch {
+    process.exit(0)
+  }
 
-  let summary = await readFile(summaryPath, 'utf8')
+  const paths = sessionPaths(validatedId)
+  if (!existsSync(paths.md)) process.exit(0)
+
+  const summary = await readFile(paths.md, 'utf8')
 
   // Build context injection
   let output = [
@@ -55,14 +59,13 @@ async function main() {
     'session before compaction. Treat this as your',
     'working memory — pick up where you left off.',
     '',
-    summary
+    summary,
   ].join('\n')
 
   if (output.length > MAX_OUTPUT) {
     output = output.slice(0, MAX_OUTPUT)
     process.stderr.write(
-      `seamless-claude: output truncated to `
-      + `${MAX_OUTPUT} chars\n`
+      `seamless-claude: output truncated to ${MAX_OUTPUT} chars\n`,
     )
   }
 

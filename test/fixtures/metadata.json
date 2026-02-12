@@ -1,0 +1,10 @@
+{
+  "session_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "generated_at": "2026-02-12T10:00:00Z",
+  "model": "sonnet",
+  "transcript_path": "/tmp/test-transcript.jsonl",
+  "transcript_entries": 10,
+  "transcript_chars": 1500,
+  "transcript_byte_offset": 800,
+  "summary_chars": 2000
+}

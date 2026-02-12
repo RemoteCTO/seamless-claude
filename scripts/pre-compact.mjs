@@ -11,10 +11,10 @@
 
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { readFile, writeFile, mkdir } from 'node:fs/promises'
-import { join, dirname } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { homedir } from 'node:os'
+import { sessionPaths, validateSessionId } from '../lib/config.mjs'
+import { acquireLock, isLockStale } from '../lib/lockfile.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -27,11 +27,6 @@ async function readStdin() {
 }
 
 async function main() {
-  const outputDir = join(
-    homedir(), '.seamless-claude', 'sessions'
-  )
-  await mkdir(outputDir, { recursive: true })
-
   let input
   try {
     input = JSON.parse(await readStdin())
@@ -43,38 +38,34 @@ async function main() {
   const transcript = input.transcript_path
   if (!sessionId || !transcript) process.exit(1)
 
-  const outFile = join(outputDir, `${sessionId}.md`)
-  const lockFile = join(
-    outputDir, `${sessionId}.lock`
-  )
-
-  // Already done or in progress
-  if (existsSync(outFile)) process.exit(0)
-  if (existsSync(lockFile)) {
-    // Check for stale lock (>10 min)
-    const { mtimeMs } = await import('node:fs')
-      .then(fs => fs.statSync(lockFile))
-    if (Date.now() - mtimeMs < 600_000) {
-      process.exit(0)
-    }
+  // Validate session ID before using in paths
+  let validatedId
+  try {
+    validatedId = validateSessionId(sessionId)
+  } catch {
+    process.exit(1)
   }
 
-  // Write lock
-  await writeFile(
-    lockFile, `${process.pid}:${Date.now()}`
-  )
+  const paths = sessionPaths(validatedId)
+
+  // Already done
+  if (existsSync(paths.md)) process.exit(0)
+
+  // Check for stale lock
+  if (existsSync(paths.lock) && !isLockStale(paths.lock)) {
+    process.exit(0)
+  }
+
+  // Acquire lock
+  if (!acquireLock(paths.lock)) process.exit(0)
 
   // Spawn compactor detached
   const compactor = join(__dirname, 'compactor.mjs')
-  const child = spawn(
-    'node',
-    [compactor, sessionId, transcript],
-    {
-      detached: true,
-      stdio: 'ignore',
-      env: { ...process.env, HOME: homedir() }
-    }
-  )
+  const child = spawn('node', [compactor, validatedId, transcript], {
+    detached: true,
+    stdio: 'ignore',
+    env: process.env,
+  })
   child.unref()
 }
 
