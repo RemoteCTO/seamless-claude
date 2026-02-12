@@ -105,11 +105,13 @@ function runDisplayCmd(rawStdin, env) {
   return false
 }
 
-function fallbackLine(pct, status) {
+function fallbackLine(pct, status, shortId) {
   const bar = buildBar(pct)
   const icon = STATUS_ICONS[status] || ''
-  const suffix = icon ? ` ${icon}` : ''
-  console.log(`seamless: ${pct.toFixed(0)}% ${bar}${suffix}`)
+  const parts = [`seamless: ${pct.toFixed(0)}% ${bar}`]
+  if (icon) parts.push(icon)
+  if (status !== 'idle') parts.push(shortId)
+  console.log(parts.join(' '))
 }
 
 const FALLBACK = 'seamless: --% ░░░░░░░░░░░░░░░░░░░░'
@@ -212,7 +214,7 @@ async function main() {
     if (ok) return
   }
 
-  fallbackLine(pct, status)
+  fallbackLine(pct, status, validatedId.slice(0, 8))
 }
 
 main().catch(() => {
