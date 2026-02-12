@@ -18,8 +18,8 @@
     "session-continuity",
     "precompact"
   ],
-  "author": "Ed Woodcock",
-  "license": "MIT",
+  "author": "Edward Woodcock",
+  "license": "Apache-2.0",
   "bugs": {
     "url": "https://github.com/RemoteCTO/seamless-claude/issues"
   },

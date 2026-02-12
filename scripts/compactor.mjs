@@ -13,15 +13,16 @@
  *        SEAMLESS_MAX_CHARS (default: 400000)
  */
 
-import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { appendFile, writeFile } from 'node:fs/promises'
 import { runClaude } from '../lib/claude.mjs'
 import {
+  HOOKS_DIR,
   TOOL_RESULT_MAX,
   sessionPaths,
   validateSessionId,
 } from '../lib/config.mjs'
+import { formatHookOutput, runAllHooks } from '../lib/hooks.mjs'
 import { releaseLock } from '../lib/lockfile.mjs'
 import { parseTranscript } from '../lib/transcript.mjs'
 import { validateResult } from '../lib/validate.mjs'
@@ -35,6 +36,8 @@ const MAX_CHARS = Number.parseInt(
   process.env.SEAMLESS_MAX_CHARS || '400000',
   10,
 )
+const HOOK_TIMEOUT =
+  Number.parseInt(process.env.SEAMLESS_HOOK_TIMEOUT || '60', 10) * 1000
 
 const PROMPT = `You are a session continuity assistant. \
 Below is a Claude Code conversation transcript. \
@@ -221,53 +224,35 @@ async function main() {
     mode: 0o600,
   })
 
-  // Run post-compact hook if configured
-  const hookCmd = process.env.SEAMLESS_POST_HOOK
-  if (hookCmd) {
-    await log(`Running post-compact hook: ${hookCmd}`)
+  // Run hooks.d scripts (if any exist)
+  const hookResults = await runAllHooks(
+    validatedId,
+    TRANSCRIPT,
+    PATHS.md,
+    { hooksDir: HOOKS_DIR, timeoutMs: HOOK_TIMEOUT },
+  )
 
-    // Parse command and args safely
-    const parts = hookCmd.split(/\s+/)
-    const cmdParts = []
-    for (const part of parts) {
-      const replaced = part
-        .replace('%{output}', PATHS.md)
-        .replace('%{meta}', PATHS.json)
-        .replace('%{session}', validatedId)
-      cmdParts.push(replaced)
+  if (hookResults.length > 0) {
+    const ran = hookResults.map((r) => r.name)
+    await log(`Ran ${ran.length} hook(s): ${ran.join(', ')}`)
+
+    const hookOutput = formatHookOutput(hookResults)
+    if (hookOutput) {
+      // Append hook output to summary
+      const enriched = `${header}\n${result}\n\n---\n\n${hookOutput}`
+      await writeFile(PATHS.md, enriched, { mode: 0o600 })
+      await log('Enriched summary with hook output')
     }
 
-    try {
-      const child = spawn(cmdParts[0], cmdParts.slice(1), {
-        stdio: 'ignore',
-        shell: false,
-      })
-
-      await new Promise((resolve, reject) => {
-        const timer = setTimeout(() => {
-          child.kill('SIGTERM')
-          reject(new Error('Hook timeout after 30s'))
-        }, 30_000)
-
-        child.on('close', (code) => {
-          clearTimeout(timer)
-          if (code !== 0) {
-            reject(new Error(`Hook exit ${code}`))
-          } else {
-            resolve()
-          }
-        })
-
-        child.on('error', (err) => {
-          clearTimeout(timer)
-          reject(err)
-        })
-      })
-
-      await log('Post-compact hook completed')
-    } catch (err) {
-      await log(`Post-compact hook failed: ${err.message}`)
-    }
+    // Update metadata with hooks info
+    metadata.hooks_ran = hookResults.map((r) => ({
+      name: r.name,
+      exitCode: r.exitCode,
+      timedOut: r.timedOut || false,
+    }))
+    await writeFile(PATHS.json, JSON.stringify(metadata, null, 2), {
+      mode: 0o600,
+    })
   }
 
   await releaseLock(PATHS.lock)

@@ -75,7 +75,7 @@ variables for tuning:
 | `SEAMLESS_MODEL` | `sonnet` | Model for summarisation |
 | `SEAMLESS_TIMEOUT` | `300` | Seconds before timeout |
 | `SEAMLESS_MAX_CHARS` | `400000` | Max transcript chars to process |
-| `SEAMLESS_POST_HOOK` | (none) | Command to run after compaction (see below) |
+| `SEAMLESS_HOOK_TIMEOUT` | `60` | Per-hook timeout in seconds |
 
 ## Cross-session resume
 
@@ -92,23 +92,66 @@ machine), use the skill:
 
 Short ID prefixes work — you don't need the full UUID.
 
-## Post-compact hook
+## Extensibility (hooks.d)
 
-If you have your own knowledge system or want to run
-additional processing after compaction, set the
-`SEAMLESS_POST_HOOK` environment variable:
+Drop executable scripts into
+`~/.seamless-claude/hooks.d/` to run custom commands
+after each compaction. Zero config — if the directory
+doesn't exist, nothing happens.
 
-```bash
-export SEAMLESS_POST_HOOK="ruby ~/my-knowledge-extractor.rb %{output}"
+Scripts run sequentially in alphabetical order, so
+prefix with numbers to control execution order:
+
+```
+~/.seamless-claude/hooks.d/
+  01-extract-knowledge.sh
+  02-update-tickets.sh
+  03-notify.sh
 ```
 
-Available placeholders:
+### Hook contract
 
-| Placeholder | Value |
-|-------------|-------|
-| `%{output}` | Path to the generated summary (.md) |
-| `%{meta}` | Path to the metadata file (.json) |
-| `%{session}` | Session ID |
+Each script receives these environment variables:
+
+| Variable | Value |
+|----------|-------|
+| `SEAMLESS_SESSION_ID` | The session UUID |
+| `SEAMLESS_TRANSCRIPT` | Path to JSONL transcript |
+| `SEAMLESS_SUMMARY` | Path to base summary .md |
+| `SEAMLESS_OUTPUT_DIR` | Temp dir for file outputs |
+
+Scripts can:
+
+- **Write to stdout** — captured and appended to the
+  session summary
+- **Write .md files to `$SEAMLESS_OUTPUT_DIR`** —
+  contents collected and appended to the summary
+- **Perform side effects** — write to ticket dirs,
+  knowledge systems, send notifications, etc.
+
+A non-zero exit code logs a warning but does **not**
+abort other hooks or the compaction. Each hook has a
+60-second timeout (configurable via
+`SEAMLESS_HOOK_TIMEOUT`).
+
+### Example hook
+
+```bash
+#!/bin/sh
+# ~/.seamless-claude/hooks.d/01-knowledge.sh
+# Extract knowledge entries and save them
+
+claude -p --model haiku \
+  --no-session-persistence \
+  "Extract DECISION/LEARNED/PATTERN/BLOCKER entries
+   from this summary. Output as JSON array." \
+  < "$SEAMLESS_SUMMARY" \
+  > "$SEAMLESS_OUTPUT_DIR/knowledge.md"
+```
+
+The output from all hooks is appended to the session
+summary under `## Post-compaction: {script-name}`
+headings, so Claude sees it on resume.
 
 ## Resilience
 
@@ -132,10 +175,11 @@ The compactor is built to handle failure gracefully:
 | LLM summarisation | Yes | Yes | Yes | No (template) |
 | Handles auto-compaction | Yes | Yes | No | Yes |
 | Cross-session resume | Yes | No | Yes | Partial |
+| Extensible (hooks.d) | Yes | No | No | No |
 | Retry on failure | Yes | No | No | No |
 | Output validation | Yes | No | No | No |
 | Dependencies | Node.js | claude CLI | Bun, Chroma, SQLite | Docker, PostgreSQL |
-| Complexity | ~1000 lines | ~140 lines | Large | Very large |
+| Complexity | ~1600 lines | ~140 lines | Large | Very large |
 
 ## Data storage
 
@@ -153,4 +197,4 @@ Code usage.
 
 ## Licence
 
-MIT
+Apache 2.0 — see [LICENCE](LICENCE) and [NOTICE](NOTICE).

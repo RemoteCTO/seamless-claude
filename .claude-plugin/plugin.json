@@ -2,8 +2,8 @@
   "name": "seamless-claude",
   "version": "0.1.0",
   "description": "Seamless session continuity for Claude Code. Summarises your session before compaction and restores context automatically.",
-  "author": "Ed Woodcock",
-  "license": "MIT",
-  "homepage": "https://github.com/edwardwoodcock/seamless-claude",
+  "author": "Edward Woodcock",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/RemoteCTO/seamless-claude",
   "requires": ["node"]
 }
