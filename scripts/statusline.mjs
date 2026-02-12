@@ -12,13 +12,7 @@
  */
 
 import { spawn, spawnSync } from 'node:child_process'
-import {
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  writeFileSync,
-} from 'node:fs'
-import { homedir } from 'node:os'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -47,20 +41,6 @@ async function readStdin() {
     chunks.push(chunk)
   }
   return Buffer.concat(chunks).toString('utf8')
-}
-
-function findTranscript(sessionId) {
-  const projectsDir = join(homedir(), '.claude', 'projects')
-  if (!existsSync(projectsDir)) return null
-  try {
-    for (const hash of readdirSync(projectsDir)) {
-      const p = join(projectsDir, hash, `${sessionId}.jsonl`)
-      if (existsSync(p)) return p
-    }
-  } catch {
-    return null
-  }
-  return null
 }
 
 function resolveStatus(state, pct, paths) {
@@ -129,9 +109,10 @@ async function main() {
 
   const sessionId = input.session_id
   const cwd = input.cwd
+  const transcript = input.transcript_path
   const pct = input.context_window?.used_percentage
 
-  if (!sessionId || pct === undefined) {
+  if (!sessionId || pct == null) {
     console.log(FALLBACK)
     return
   }
@@ -150,7 +131,6 @@ async function main() {
   // --- Monitoring ---
 
   if (shouldCompact(state, pct, COMPACT_PCT)) {
-    const transcript = findTranscript(validatedId)
     if (transcript) {
       if (!existsSync(paths.lock) || isLockStale(paths.lock)) {
         if (acquireLock(paths.lock)) {
