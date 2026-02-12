@@ -1,38 +1,40 @@
 # seamless-claude
 
-Seamless session continuity for Claude Code.
+Zero-downtime compaction for Claude Code.
 
-When Claude Code compacts your context window, you
-lose the nuance of what you were working on. Templates
-and token counts don't capture *why* you made a
-decision or *what* you tried that failed.
+Every time Claude Code compacts your context window,
+you sit idle for minutes while it summarises your
+session. With long conversations, that's 3+ minutes
+of dead time — and it happens repeatedly.
 
-seamless-claude fixes this. It watches for compaction,
-summarises your session using a fresh Claude instance,
-and automatically restores that context into your new
-window. No manual intervention, no lost threads.
+seamless-claude eliminates the wait. It pre-compacts
+your session in the background *before* the native
+compaction fires, so when Claude does compact, your
+structured summary is already waiting. No downtime,
+no lost context, no manual intervention.
 
 ## How it works
 
 ```
-Session hits threshold
+You're working normally
         |
         v
-  PreCompact hook fires
+  Context usage crosses threshold
         |
         v
-  Background compactor spawns
-  (reads transcript JSONL,
-   calls claude -p for structured summary)
+  PreCompact hook fires IN THE BACKGROUND
+  (reads transcript, calls claude -p,
+   writes structured summary to disk)
+        |                    |
+        v                    v
+  You keep working     Summary is ready
         |
         v
-  Native compaction happens
+  Native compaction fires (instant —
+  summary already exists)
         |
         v
-  SessionStart hook fires
-        |
-        v
-  Summary injected into fresh context
+  SessionStart hook injects the summary
         |
         v
   Claude picks up where you left off
