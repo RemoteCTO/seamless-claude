@@ -1,0 +1,151 @@
+#!/usr/bin/env node
+/**
+ * Resume a Claude Code session from a
+ * seamless-claude pre-compacted summary.
+ *
+ * Usage:
+ *   claude-resume              # latest
+ *   claude-resume a1b2c3d4     # by prefix
+ *   claude-resume --list       # show all
+ *   claude-resume --pick       # interactive
+ *   claude-resume --print      # output only
+ *   claude-resume --help
+ */
+
+import { execFileSync } from 'node:child_process'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const ROOT = dirname(
+  dirname(fileURLToPath(import.meta.url)),
+)
+const RESUME = join(
+  ROOT, 'scripts', 'resume.mjs',
+)
+
+/* eslint-disable max-len */
+const USAGE = `\
+Usage: claude-resume [options] [session]
+
+Resume a Claude Code session from a
+seamless-claude pre-compacted summary.
+
+Options:
+  --list   Show available sessions
+  --pick   Interactive session picker
+  --print  Output text, skip launch
+  --help   Show this help
+
+Arguments:
+  session  UUID or short prefix (8 chars
+           from statusline). Default: latest
+
+Extra arguments pass through to claude.
+
+Examples:
+  claude-resume
+  claude-resume a1b2c3d4
+  claude-resume --pick
+  claude-resume --list
+  claude-resume --print
+  claude-resume --latest -p "continue"`
+
+function delegate(args, opts = {}) {
+  try {
+    return execFileSync(
+      process.execPath,
+      [RESUME, ...args],
+      opts,
+    )
+  } catch (err) {
+    if (opts.encoding) return null
+    process.exit(err.status ?? 1)
+  }
+}
+
+const arg = process.argv[2]
+
+if (arg === '--help' || arg === 'help') {
+  process.stdout.write(`${USAGE}\n`)
+  process.exit(0)
+}
+
+if (arg === '--list') {
+  delegate(
+    ['--list'],
+    { stdio: 'inherit' },
+  )
+  process.exit(0)
+}
+
+if (arg === '--print') {
+  const session =
+    process.argv[3] || '--latest'
+  delegate(
+    [session],
+    { stdio: 'inherit' },
+  )
+  process.exit(0)
+}
+
+// Determine session arg and claude args
+let resumeArgs
+let claudeStart
+
+if (arg === '--pick') {
+  resumeArgs = ['--pick']
+  claudeStart = 3
+} else if (arg === '--latest') {
+  resumeArgs = ['--latest']
+  claudeStart = 3
+} else if (arg && !arg.startsWith('-')) {
+  resumeArgs = [arg]
+  claudeStart = 3
+} else {
+  // No session arg or unknown flag —
+  // use latest, pass everything to claude
+  resumeArgs = ['--latest']
+  claudeStart = 2
+}
+
+const claudeArgs =
+  process.argv.slice(claudeStart)
+
+const output = delegate(resumeArgs, {
+  stdio: ['inherit', 'pipe', 'inherit'],
+  encoding: 'utf8',
+})
+
+if (!output?.trim()) {
+  process.stderr.write(
+    'No session. Starting fresh...\n\n',
+  )
+  try {
+    execFileSync('claude', claudeArgs, {
+      stdio: 'inherit',
+    })
+  } catch (err) {
+    process.exit(err.status ?? 1)
+  }
+  process.exit(0)
+}
+
+const bytes = Buffer.byteLength(
+  output, 'utf8',
+)
+process.stderr.write(
+  `Resuming (${bytes} bytes)...\n\n`,
+)
+
+try {
+  execFileSync(
+    'claude',
+    [
+      '--append-system-prompt', output,
+      ...claudeArgs,
+    ],
+    { stdio: 'inherit' },
+  )
+} catch (err) {
+  process.exit(err.status ?? 1)
+}

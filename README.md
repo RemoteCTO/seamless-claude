@@ -222,17 +222,43 @@ variables for tuning:
 
 The automatic flow handles compaction within a
 session. For resuming a *different* session (next
-day, different machine), use the skill:
+day, different machine), use the `claude-resume`
+command:
+
+```bash
+claude-resume              # resume latest session
+claude-resume a1b2c3d4     # resume by prefix
+claude-resume --list       # show available
+claude-resume --pick       # interactive picker
+claude-resume --print      # output text only
+```
+
+This starts a new `claude` session with the
+pre-compacted summary injected as context. Short
+ID prefixes work — you don't need the full UUID.
+The 8-character prefix shown in the statusline is
+enough.
+
+Any extra arguments pass through to `claude`:
+
+```bash
+claude-resume --latest -p "continue the migration"
+claude-resume a1b2c3d4 --model opus
+```
+
+`--print` outputs the resume text to stdout without
+launching claude — useful for piping or inspection.
+
+### From within a session
+
+If you're already inside Claude Code and want to
+load a previous session's context, use the skill
+instead:
 
 ```
 /seamless-claude:resume --latest
-/seamless-claude:resume --list
-/seamless-claude:resume --pick
 /seamless-claude:resume a1b2c3d4
 ```
-
-Short ID prefixes work — you don't need the full
-UUID.
 
 ## Extensibility (hooks.d)
 
