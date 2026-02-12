@@ -31,10 +31,9 @@ User starts     →  summary auto-injected into
 fresh session      new context window
 ```
 
-**Important:** You must push Claude Code's native
-auto-compaction to 95% so it doesn't fight the
-plugin. Without this, native compaction fires at
-~90% and disrupts the background compaction cycle.
+**Important:** Disable Claude Code's built-in
+auto-compaction. seamless-claude replaces it
+entirely — running both will cause conflicts.
 See [Setup](#setup-full-mode).
 
 ### Basic Mode (fallback)
@@ -69,13 +68,13 @@ The summary is structured into five sections:
 
 ## Setup (Full Mode)
 
-Add to your `~/.claude/settings.json`:
+1. Disable auto-compaction in Claude Code settings
+   (`/config` → auto-compact off)
+
+2. Add the statusline to `~/.claude/settings.json`:
 
 ```json
 {
-  "env": {
-    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "95"
-  },
   "statusLine": {
     "type": "command",
     "command": "node ~/.claude/plugins/seamless-claude/scripts/statusline.mjs"
@@ -85,14 +84,15 @@ Add to your `~/.claude/settings.json`:
 
 Adjust the path to wherever the plugin is installed.
 
-**`CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=95` is required.**
-Claude Code's native auto-compaction defaults to ~90%.
-Without pushing it to 95%, native compaction fires
-before seamless-claude's wrap-up threshold (also 90%),
-meaning you'll still get the disruptive in-line
-compaction instead of the background one. The 95%
-threshold acts as a safety net — it only fires if
-everything else has failed.
+> **Why disable auto-compaction?** seamless-claude
+> replaces it. Native auto-compaction fires at ~90%,
+> the same threshold where seamless-claude injects
+> its wrap-up. Running both means native compaction
+> interrupts the managed handoff. If you want a
+> safety net, you can set
+> `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=95` in your env
+> instead of fully disabling — but this is
+> unsupported and may still cause conflicts.
 
 The statusline shows context usage after every
 response:
@@ -143,8 +143,7 @@ Example `settings.json`:
 ```json
 {
   "env": {
-    "SEAMLESS_DISPLAY_CMD": "/path/to/your/statusline.sh",
-    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "95"
+    "SEAMLESS_DISPLAY_CMD": "/path/to/your/statusline.sh"
   },
   "statusLine": {
     "type": "command",
@@ -218,12 +217,6 @@ variables for tuning:
 | `SEAMLESS_MAX_CHARS` | `400000` | Max transcript chars |
 | `SEAMLESS_HOOK_TIMEOUT` | `60` | Per-hook timeout (s) |
 | `SEAMLESS_DISPLAY_CMD` | — | Custom statusline command |
-
-**Required** in `settings.json`:
-
-| Variable | Value | Purpose |
-|----------|-------|---------|
-| `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` | `95` | Push native compaction out of the way |
 
 ## Cross-session resume
 
@@ -352,12 +345,9 @@ instead of blocking your session.
 - Cross-session resume means less context re-reading
   at the start of new sessions
 
-Native compaction still fires at 95% as a safety
-net. When it does, Claude Code performs its own
-summarisation. The plugin's summary is injected
-alongside it via the SessionStart hook, so you
-get both — but the plugin's structured summary is
-typically more useful.
+With native auto-compaction disabled, seamless-claude
+is the only thing generating summaries. There's no
+duplicate work.
 
 **Net effect:** slightly more tokens per session,
 but significantly more productive use of those
