@@ -9,14 +9,17 @@
  */
 
 import { appendFileSync, existsSync, readFileSync } from 'node:fs'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { sessionPaths, validateSessionId } from '../lib/config.mjs'
+import {
+  DATA_DIR,
+  sessionPaths,
+  validateSessionId,
+} from '../lib/config.mjs'
 import { isLockStale } from '../lib/lockfile.mjs'
 import { readState, writeState } from '../lib/state.mjs'
 import { lastLogLine } from '../lib/statusline.mjs'
 
-const UPS_LOG = join(homedir(), '.seamless-claude', 'ups-errors.log')
+const UPS_LOG = join(DATA_DIR, 'ups-errors.log')
 
 function logError(msg) {
   try {

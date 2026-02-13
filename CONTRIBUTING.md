@@ -23,7 +23,7 @@ Code style is enforced by biome:
 - ESM imports only
 
 Run `npm run lint` before submitting changes. Auto-fix with
-`npm run lint -- --fix`.
+`npm run lint:fix`.
 
 ## Testing
 

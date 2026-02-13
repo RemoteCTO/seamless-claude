@@ -76,4 +76,4 @@ Initial release.
   resume across sessions.
 - **PreCompact hook**: fallback compaction for Basic
   Mode (no statusline configured).
-- CI workflow (lint + tests on Node 18/20/22).
+- CI workflow (lint + tests on Node 18/22).
