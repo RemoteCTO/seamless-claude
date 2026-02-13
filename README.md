@@ -70,6 +70,26 @@ This installs the hooks (PreCompact, SessionStart,
 UserPromptSubmit) automatically. Basic Mode works
 immediately — no further setup needed.
 
+For Full Mode (recommended), continue to
+[Setup](#setup-full-mode).
+
+## Updating
+
+The plugin cache path includes the version number.
+After updating, you **must** update the statusline
+path in `~/.claude/settings.json` to match the new
+version:
+
+```bash
+# Find the new path
+find ~/.claude/plugins -name statusline.mjs \
+  -path '*seamless*' 2>/dev/null
+```
+
+Update the `statusLine.command` value in
+`settings.json` with the new path, then restart
+Claude Code.
+
 ## Setup (Full Mode)
 
 Full Mode adds proactive monitoring via the
@@ -93,13 +113,13 @@ This returns something like:
 ### 2. Add the statusline to settings.json
 
 Edit `~/.claude/settings.json` and add the
-`statusLine` block using the path from step 1:
+`statusLine` block using the full path from step 1:
 
 ```json
 {
   "statusLine": {
     "type": "command",
-    "command": "node /full/path/to/scripts/statusline.mjs"
+    "command": "node ~/.claude/plugins/cache/remotecto-plugins/seamless-claude/0.1.1/scripts/statusline.mjs"
   }
 }
 ```
@@ -125,7 +145,17 @@ Setting this to `100` effectively disables native
 compaction (it would only fire at 100%, which never
 happens). seamless-claude handles everything instead.
 
-Restart Claude Code for the changes to take effect.
+### 4. Restart Claude Code
+
+Restart for the changes to take effect. You should
+see the built-in statusline:
+
+```
+seamless: 45% █████████░░░░░░░░░░░
+```
+
+If you have an existing statusline you want to keep,
+see [Using with an existing statusline](#using-with-an-existing-statusline).
 
 The statusline shows context usage after every
 response:
@@ -156,54 +186,122 @@ active.
 
 For Basic Mode, skip the statusline config entirely.
 
+### Why seamless-claude owns the statusline slot
+
+Ideally, you'd own the statusline and call a
+seamless-claude widget from within your script.
+We'd prefer that architecture too — it's more
+composable, keeps you in control, and means version
+bumps don't break your statusline path.
+
+The constraint is Claude Code's hook model. The
+`statusLine` hook is the only reliable trigger that
+fires after every response. seamless-claude needs
+that trigger to monitor context usage and fire
+background compaction at the right moment. There's
+no generic "AfterResponse" hook available.
+
+If Claude Code adds one, we'll invert the flow so
+your script is primary and seamless-claude becomes
+a callable widget. Until then, the `SEAMLESS_DISPLAY_CMD`
+delegation is the best we can do.
+
 ### Using with an existing statusline
 
-If you already have a statusline script, you don't
-need to replace it. Set `SEAMLESS_DISPLAY_CMD` and
-seamless-claude handles monitoring in the
-background, then calls your script for display.
+If you already have a custom statusline command,
+you don't need to replace it. The data flow is:
 
-Your command receives:
+```
+Claude Code → seamless-claude statusline.mjs
+                ├── monitors context, triggers compaction
+                ├── writes status.json
+                └── calls YOUR script via SEAMLESS_DISPLAY_CMD
+                      ├── receives original JSON on stdin
+                      ├── receives env vars with seamless status
+                      └── prints statusline to stdout
+```
 
-- **stdin**: the original Claude Code JSON (same
-  data your statusline already parses)
-- **env vars**: seamless-claude status
-
-| Env var | Example | Description |
-|---------|---------|-------------|
-| `SEAMLESS_PCT` | `73.5` | Context usage % |
-| `SEAMLESS_STATUS` | `compacting` | idle, compacting, ready, error, wrapup |
-| `SEAMLESS_INDICATOR` | `S` or `🔄` | Short indicator (always set when active) |
-| `SEAMLESS_SESSION_ID` | `a1b2...` | Full session UUID |
-| `SEAMLESS_SESSION_SHORT` | `a1b2c3d4` | First 8 chars |
-| `SEAMLESS_SUMMARY_PATH` | `/path/to/summary.md` | Empty if not ready |
+#### Step 1: Point seamless-claude at your script
 
 Add `SEAMLESS_DISPLAY_CMD` to the `env` block in
-`settings.json`, pointing to your script:
+`settings.json`:
 
 ```json
 {
   "env": {
-    "SEAMLESS_DISPLAY_CMD": "/path/to/your/statusline.sh"
+    "SEAMLESS_DISPLAY_CMD": "~/.claude/statusline.rb",
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "100"
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "node ~/.claude/plugins/cache/remotecto-plugins/seamless-claude/0.1.1/scripts/statusline.mjs"
   }
 }
 ```
 
-The statusline command still points to
-seamless-claude's `statusline.mjs` (as in step 2
-above). seamless-claude runs first, then passes
-control to your script with the env vars set.
+The `statusLine.command` points to seamless-claude
+(not your script). seamless-claude handles
+monitoring, then delegates display to your script.
 
-Your script reads the env vars to show compaction
-status alongside its own output:
+#### Step 2: Read the env vars in your script
 
-```bash
+Your script receives the original Claude Code JSON
+on stdin (unchanged) plus these env vars:
+
+| Env var | Example | Description |
+|---------|---------|-------------|
+| `SEAMLESS_PCT` | `73` | Context usage % |
+| `SEAMLESS_STATUS` | `compacting` | idle, compacting, ready, error, wrapup |
+| `SEAMLESS_INDICATOR` | `S` or `🔄` | Short indicator (always set) |
+| `SEAMLESS_SESSION_ID` | `a1b2...` | Full session UUID |
+| `SEAMLESS_SESSION_SHORT` | `a1b2c3d4` | First 8 chars |
+| `SEAMLESS_SUMMARY_PATH` | `/path/to.md` | Empty if not ready |
+
+Your script processes stdin as normal for its own
+output, then reads the env vars to show compaction
+status. Here's a minimal example in Ruby:
+
+```ruby
+#!/usr/bin/env ruby
+data = JSON.parse($stdin.read)
+
+# Your existing statusline logic here...
+pct = data.dig('context_window', 'used_percentage')
+# ... build your output ...
+
+# Add seamless-claude status from env vars
+status = ENV['SEAMLESS_STATUS']
+short  = ENV['SEAMLESS_SESSION_SHORT']
+indicator = case status
+  when 'compacting' then ' 🔄'
+  when 'ready'      then " ✅ #{short}"
+  when 'error'      then " ❌ #{short}"
+  when 'wrapup'     then " ⚠️ #{short}"
+  when 'idle'       then ' S'
+  else ''
+  end
+
+puts "#{your_bar}#{indicator}"
+```
+
+And in shell:
+
+```sh
 #!/bin/sh
-INDICATOR="$SEAMLESS_INDICATOR"  # S, 🔄, ✅, ❌, ⚠️
-SHORT="$SEAMLESS_SESSION_SHORT"
-# Show your normal statusline output, plus:
-# $INDICATOR confirms seamless-claude is active
-# Add $SHORT when compacting/ready/error
+# Parse stdin JSON with jq for your own output
+PCT=$(echo "$INPUT" | jq -r '.context_window.used_percentage')
+
+# Seamless status from env vars
+case "$SEAMLESS_STATUS" in
+  compacting) ICON="🔄" ;;
+  ready)      ICON="✅ $SEAMLESS_SESSION_SHORT" ;;
+  error)      ICON="❌ $SEAMLESS_SESSION_SHORT" ;;
+  wrapup)     ICON="⚠️ $SEAMLESS_SESSION_SHORT" ;;
+  idle)       ICON="S" ;;
+  *)          ICON="" ;;
+esac
+
+echo "${PCT}% ${ICON}"
 ```
 
 If your command exits non-zero or produces no output,
@@ -492,10 +590,7 @@ missing, the error is from another plugin.
 
 **Plugin path changed after update**
 
-The plugin cache path includes the version number.
-After updating, re-run the `find` command from
-[Setup step 1](#1-find-the-plugin-path) and update
-`settings.json` with the new path.
+See [Updating](#updating).
 
 **Reverting to default**
 
