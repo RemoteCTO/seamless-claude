@@ -48,16 +48,18 @@ falls back to hook-only operation:
 
 ## How it works
 
-The summary is structured into five sections:
+The summary is structured into six sections:
 
 1. **Session Summary** — what was requested,
    accomplished, and what remains
 2. **Technical Context** — file paths, commands,
    config values, error messages (verbatim)
-3. **Knowledge Extractions** — reusable decisions,
+3. **User Intent** — the user's original requests,
+   clarifications, and constraints (verbatim)
+4. **Knowledge Extractions** — reusable decisions,
    learnings, patterns, and blockers
-4. **Next Steps** — priority-ordered action items
-5. **Active Context** — working directory, branch,
+5. **Next Steps** — priority-ordered action items
+6. **Active Context** — working directory, branch,
    key files
 
 ## Install
@@ -369,6 +371,56 @@ variables for tuning:
 | `SEAMLESS_MAX_CHARS` | `400000` | Max transcript chars |
 | `SEAMLESS_HOOK_TIMEOUT` | `60` | Per-hook timeout (s) |
 | `SEAMLESS_DISPLAY_CMD` | — | Custom statusline command |
+| `SEAMLESS_PROMPT_FILE` | — | Custom compaction prompt file |
+
+## Custom compaction prompt
+
+By default, seamless-claude uses a built-in prompt
+that produces the six-section structure above. To
+replace it entirely with your own prompt, set
+`SEAMLESS_PROMPT_FILE` to a file path:
+
+```json
+{
+  "env": {
+    "SEAMLESS_PROMPT_FILE": "~/.seamless-claude/my-prompt.md"
+  }
+}
+```
+
+The file content replaces the default prompt
+verbatim — the summarisation model receives your
+prompt followed by the transcript. Tilde expansion
+is supported. If the file is missing or unreadable,
+the default prompt is used silently.
+
+When a custom prompt is active, output validation
+is relaxed: the section-name check is skipped
+(your prompt produces different sections), but the
+minimum length check (500 chars) still applies.
+
+## Summarise historical sessions
+
+Got a past session you want a structured summary
+of? `claude-summarise` runs the compactor against
+any historical transcript:
+
+```bash
+claude-summarise 97aac477       # by prefix
+claude-summarise --list         # show all
+claude-summarise 97aa --list    # filter by prefix
+claude-summarise 97aa --force   # re-summarise
+```
+
+It searches `~/.claude/projects/*/` for matching
+transcripts, resolves the full session ID, and
+runs the compactor. If a summary already exists,
+it tells you and skips (use `--force` to redo).
+
+The output lands in
+`~/.seamless-claude/sessions/{id}.md` — same
+format as automatic compaction, so `claude-resume`
+can pick it up.
 
 ## Cross-session resume
 
@@ -431,6 +483,12 @@ exec node \
 WRAPPER
 
 chmod +x ~/.claude/bin/claude-resume
+
+# Repeat for claude-summarise
+cp ~/.claude/bin/claude-resume \
+  ~/.claude/bin/claude-summarise
+sed -i '' 's/claude-resume/claude-summarise/g' \
+  ~/.claude/bin/claude-summarise
 ```
 
 Then add `~/.claude/bin` to your PATH (if not
@@ -532,8 +590,9 @@ The compactor handles failure gracefully:
 - **Retry**: On failure (timeout, bad exit, empty
   result), retries once with a halved transcript
 - **Validation**: Checks the summary contains at
-  least 3 of the 5 expected sections (case-insensitive)
-  and exceeds 500 characters
+  least 3 of the 6 expected sections (case-insensitive)
+  and exceeds 500 characters. When using a custom
+  prompt, only the length check applies
 - **Lockfiles**: Prevents duplicate compactions;
   stale locks (>10 min) are automatically cleaned
 - **Output cap**: Resume output capped at 200K

@@ -1,0 +1,59 @@
+#!/usr/bin/env node
+/**
+ * Summarise a historical Claude Code session.
+ *
+ * Usage:
+ *   claude-summarise <id-or-prefix>
+ *   claude-summarise <id-or-prefix> --force
+ *   claude-summarise --list [prefix]
+ *   claude-summarise --help
+ */
+
+import { execFileSync } from 'node:child_process'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const ROOT = dirname(
+  dirname(fileURLToPath(import.meta.url)),
+)
+const SCRIPT = join(
+  ROOT, 'scripts', 'summarise.mjs',
+)
+
+const USAGE = `\
+Usage: claude-summarise [options] <session>
+
+Summarise any historical Claude Code session
+by running the seamless-claude compactor against
+its transcript.
+
+Options:
+  --list    List available sessions
+  --force   Re-summarise even if summary exists
+  --help    Show this help
+
+Arguments:
+  session   UUID or short prefix (min 8 chars)
+
+Examples:
+  claude-summarise 97aac477
+  claude-summarise --list
+  claude-summarise --list baldyak
+  claude-summarise 97aac477 --force`
+
+const arg = process.argv[2]
+
+if (arg === '--help' || arg === 'help') {
+  process.stdout.write(`${USAGE}\n`)
+  process.exit(0)
+}
+
+try {
+  execFileSync(
+    process.execPath,
+    [SCRIPT, ...process.argv.slice(2)],
+    { stdio: 'inherit' },
+  )
+} catch (err) {
+  process.exit(err.status ?? 1)
+}
