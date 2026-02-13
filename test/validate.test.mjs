@@ -87,6 +87,25 @@ Context here.
       assert.equal(validateResult(result), false)
     })
 
+    it('matches section headings case-insensitively', () => {
+      const padding = 'x'.repeat(200)
+      const result = `
+## session summary
+
+Summary. ${padding}
+
+## technical context
+
+Context. ${padding}
+
+## knowledge extractions
+
+LEARNED: something
+      `.trim()
+
+      assert.equal(validateResult(result), true)
+    })
+
     it('returns true for exactly 500 chars with 3 sections', () => {
       const header = `## Session Summary
 
