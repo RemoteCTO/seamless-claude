@@ -62,13 +62,25 @@ The summary is structured into five sections:
 
 ## Install
 
+### From [marketplace][mkt] (recommended)
+
+```
+/plugin marketplace add RemoteCTO/claude-plugins-marketplace
+/plugin install seamless-claude
+```
+
+### Manual
+
 ```bash
 /install-plugin RemoteCTO/seamless-claude
 ```
 
-This installs the hooks (PreCompact, SessionStart,
-UserPromptSubmit) automatically. Basic Mode works
-immediately — no further setup needed.
+Either method installs the hooks (PreCompact,
+SessionStart, UserPromptSubmit) automatically.
+Basic Mode works immediately — no further setup
+needed.
+
+[mkt]: https://github.com/RemoteCTO/claude-plugins-marketplace
 
 For Full Mode (recommended), continue to
 [Setup](#setup-full-mode).
