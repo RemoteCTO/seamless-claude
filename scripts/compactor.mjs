@@ -60,7 +60,15 @@ PRESERVE ALL specific details verbatim:
 - Architecture decisions with reasoning
 - Environment details (branches, versions)
 
-### 3. Knowledge Extractions
+### 3. User Intent
+Include the user's original request(s) VERBATIM — \
+the exact messages that initiated or redirected work. \
+Include any clarifications or corrections \
+("no, I meant X", "actually, do Y instead"). \
+Include stated constraints or preferences. \
+Only direction-shaping messages, not every message.
+
+### 4. Knowledge Extractions
 Extract reusable knowledge in these exact formats:
 \`\`\`
 DECISION: [choice with full reasoning]
@@ -69,11 +77,11 @@ PATTERN:  [code pattern with example]
 BLOCKER:  [what doesn't work and why]
 \`\`\`
 
-### 4. Next Steps
+### 5. Next Steps
 Specific, actionable items. Priority ordered.
 Include any open questions or blockers.
 
-### 5. Active Context
+### 6. Active Context
 - Working directory
 - Git branch
 - Active ticket/epic (if mentioned)
