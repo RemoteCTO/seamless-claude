@@ -389,6 +389,56 @@ claude-resume a1b2c3d4 --model opus
 `--print` outputs the resume text to stdout without
 launching claude — useful for piping or inspection.
 
+### PATH setup
+
+Claude Code's plugin system installs the binary at
+a versioned path but doesn't add it to your shell's
+PATH. You have two options:
+
+**Option A: Durable wrapper (recommended)**
+
+Create a thin wrapper that finds the latest version
+automatically — survives plugin updates:
+
+```bash
+mkdir -p ~/.claude/bin
+
+cat > ~/.claude/bin/claude-resume << 'WRAPPER'
+#!/usr/bin/env bash
+set -euo pipefail
+PLUGIN_DIR="$HOME/.claude/plugins/cache"
+PLUGIN_DIR+="/remotecto-plugins/seamless-claude"
+LATEST=$(ls -1 "$PLUGIN_DIR" 2>/dev/null \
+  | sort -V | tail -1)
+if [ -z "$LATEST" ]; then
+  echo "seamless-claude not installed" >&2
+  exit 1
+fi
+exec node \
+  "$PLUGIN_DIR/$LATEST/bin/claude-resume" "$@"
+WRAPPER
+
+chmod +x ~/.claude/bin/claude-resume
+```
+
+Then add `~/.claude/bin` to your PATH (if not
+already there):
+
+```bash
+# Add to ~/.zshrc or ~/.bashrc
+export PATH="$HOME/.claude/bin:$PATH"
+```
+
+**Option B: Direct symlink**
+
+Simpler but breaks on each version update:
+
+```bash
+ln -sf ~/.claude/plugins/cache/remotecto-plugins/\
+seamless-claude/0.1.1/bin/claude-resume \
+  ~/.local/bin/claude-resume
+```
+
 ### From within a session
 
 If you're already inside Claude Code and want to
