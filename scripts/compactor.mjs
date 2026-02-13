@@ -15,6 +15,7 @@
 
 import { existsSync } from 'node:fs'
 import { appendFile, writeFile } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { runClaude } from '../lib/claude.mjs'
 import {
   HOOKS_DIR,
@@ -96,6 +97,21 @@ const SYSTEM_PROMPT =
   'else. Just produce the requested structured ' +
   'output.'
 
+// Custom prompt file overrides default
+let activePrompt = PROMPT
+let usingCustomPrompt = false
+const promptFile = process.env.SEAMLESS_PROMPT_FILE
+if (promptFile) {
+  try {
+    const { readFileSync } = await import('node:fs')
+    const expanded = promptFile.replace(/^~/, homedir())
+    activePrompt = readFileSync(expanded, 'utf8').trim()
+    usingCustomPrompt = true
+  } catch {
+    // Fall back to default prompt
+  }
+}
+
 let PATHS = null
 
 async function log(msg) {
@@ -163,11 +179,11 @@ async function main() {
     try {
       let input
       if (attempt === 1) {
-        input = `${PROMPT}\n\n---\n\nTRANSCRIPT (${conversation.length} entries):\n\n${transcriptText}`
+        input = `${activePrompt}\n\n---\n\nTRANSCRIPT (${conversation.length} entries):\n\n${transcriptText}`
       } else {
         const half = Math.floor(transcriptText.length / 2)
         const shortened = transcriptText.slice(-half)
-        input = `${PROMPT}\n\n---\n\nTRANSCRIPT (truncated, retry):\n\n${shortened}`
+        input = `${activePrompt}\n\n---\n\nTRANSCRIPT (truncated, retry):\n\n${shortened}`
         await log(
           `Retry with ${input.length} chars (transcript halved)`,
         )
@@ -176,7 +192,7 @@ async function main() {
       await log(`Attempt ${attempt}: calling claude -p`)
       const res = await runClaude(cmd, input, TIMEOUT)
 
-      if (!validateResult(res)) {
+      if (!validateResult(res, usingCustomPrompt)) {
         throw new Error(
           `Output failed validation (length=${(res || '').length})`,
         )
