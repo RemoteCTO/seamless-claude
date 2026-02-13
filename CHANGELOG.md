@@ -19,6 +19,20 @@ here. Format follows [Keep a Changelog][kac].
   original requests, clarifications, and stated
   constraints verbatim — only direction-shaping
   messages, not every exchange.
+- **`claude-summarise` CLI command**: summarise any
+  historical Claude Code session by ID or prefix.
+  Searches `~/.claude/projects/*/` for transcripts,
+  runs the compactor, outputs to the standard
+  sessions directory. Supports `--list`, `--force`,
+  and prefix matching.
+
+### Fixed
+
+- **Nested session guard**: compactor now strips the
+  `CLAUDECODE` environment variable when spawning
+  `claude -p`, so compaction works when triggered
+  from within a Claude Code session. Previously
+  failed with a nested-session error.
 
 ### Changed
 

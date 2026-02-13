@@ -4,7 +4,8 @@
   "description": "Zero-downtime compaction for Claude Code. Pre-compacts sessions in the background so you never wait.",
   "type": "module",
   "bin": {
-    "claude-resume": "bin/claude-resume"
+    "claude-resume": "bin/claude-resume",
+    "claude-summarise": "bin/claude-summarise"
   },
   "scripts": {
     "test": "node --test test/*.test.mjs",

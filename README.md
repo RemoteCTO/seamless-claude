@@ -399,6 +399,29 @@ is relaxed: the section-name check is skipped
 (your prompt produces different sections), but the
 minimum length check (500 chars) still applies.
 
+## Summarise historical sessions
+
+Got a past session you want a structured summary
+of? `claude-summarise` runs the compactor against
+any historical transcript:
+
+```bash
+claude-summarise 97aac477       # by prefix
+claude-summarise --list         # show all
+claude-summarise --list ban     # filter by project
+claude-summarise 97aa --force   # re-summarise
+```
+
+It searches `~/.claude/projects/*/` for matching
+transcripts, resolves the full session ID, and
+runs the compactor. If a summary already exists,
+it tells you and skips (use `--force` to redo).
+
+The output lands in
+`~/.seamless-claude/sessions/{id}.md` — same
+format as automatic compaction, so `claude-resume`
+can pick it up.
+
 ## Cross-session resume
 
 The automatic flow handles compaction within a
@@ -460,6 +483,12 @@ exec node \
 WRAPPER
 
 chmod +x ~/.claude/bin/claude-resume
+
+# Repeat for claude-summarise
+cp ~/.claude/bin/claude-resume \
+  ~/.claude/bin/claude-summarise
+sed -i '' 's/claude-resume/claude-summarise/g' \
+  ~/.claude/bin/claude-summarise
 ```
 
 Then add `~/.claude/bin` to your PATH (if not
