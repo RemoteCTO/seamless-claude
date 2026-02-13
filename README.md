@@ -66,33 +66,66 @@ The summary is structured into five sections:
 /install-plugin RemoteCTO/seamless-claude
 ```
 
+This installs the hooks (PreCompact, SessionStart,
+UserPromptSubmit) automatically. Basic Mode works
+immediately — no further setup needed.
+
 ## Setup (Full Mode)
 
-1. Disable auto-compaction in Claude Code settings
-   (`/config` → auto-compact off)
+Full Mode adds proactive monitoring via the
+statusline. Three steps:
 
-2. Add the statusline to `~/.claude/settings.json`:
+### 1. Find the plugin path
+
+The plugin installs to a versioned cache directory.
+Find it with:
+
+```bash
+find ~/.claude/plugins -name statusline.mjs \
+  -path '*seamless*' 2>/dev/null
+```
+
+This returns something like:
+```
+~/.claude/plugins/cache/remotecto-plugins/seamless-claude/0.1.0/scripts/statusline.mjs
+```
+
+### 2. Add the statusline to settings.json
+
+Edit `~/.claude/settings.json` and add the
+`statusLine` block using the path from step 1:
 
 ```json
 {
   "statusLine": {
     "type": "command",
-    "command": "node ~/.claude/plugins/seamless-claude/scripts/statusline.mjs"
+    "command": "node /full/path/to/scripts/statusline.mjs"
   }
 }
 ```
 
-Adjust the path to wherever the plugin is installed.
+### 3. Disable native auto-compaction
 
-> **Why disable auto-compaction?** seamless-claude
-> replaces it. Native auto-compaction fires at ~90%,
-> the same threshold where seamless-claude injects
-> its wrap-up. Running both means native compaction
-> interrupts the managed handoff. If you want a
-> safety net, you can set
-> `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=95` in your env
-> instead of fully disabling — but this is
-> unsupported and may still cause conflicts.
+seamless-claude replaces Claude Code's built-in
+compaction. Running both causes conflicts — native
+compaction fires at ~90%, the same threshold where
+seamless-claude injects its wrap-up.
+
+Add to the `env` block in `settings.json`:
+
+```json
+{
+  "env": {
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "100"
+  }
+}
+```
+
+Setting this to `100` effectively disables native
+compaction (it would only fire at 100%, which never
+happens). seamless-claude handles everything instead.
+
+Restart Claude Code for the changes to take effect.
 
 The statusline shows context usage after every
 response:
@@ -117,12 +150,12 @@ compaction starts. Icons:
 
 For Basic Mode, skip the statusline config entirely.
 
-### Custom statusline display
+### Using with an existing statusline
 
-If you already have a statusline script, set
-`SEAMLESS_DISPLAY_CMD` to delegate display to it.
-seamless-claude handles monitoring, then calls your
-command for the actual output.
+If you already have a statusline script, you don't
+need to replace it. Set `SEAMLESS_DISPLAY_CMD` and
+seamless-claude handles monitoring in the
+background, then calls your script for display.
 
 Your command receives:
 
@@ -138,30 +171,31 @@ Your command receives:
 | `SEAMLESS_SESSION_SHORT` | `a1b2c3d4` | First 8 chars |
 | `SEAMLESS_SUMMARY_PATH` | `/path/to/summary.md` | Empty if not ready |
 
-Example `settings.json`:
+Add `SEAMLESS_DISPLAY_CMD` to the `env` block in
+`settings.json`, pointing to your script:
 
 ```json
 {
   "env": {
     "SEAMLESS_DISPLAY_CMD": "/path/to/your/statusline.sh"
-  },
-  "statusLine": {
-    "type": "command",
-    "command": "node ~/.claude/plugins/seamless-claude/scripts/statusline.mjs"
   }
 }
 ```
 
-Your script can read the env vars to incorporate
-seamless status into its own display. For example,
-in a shell script:
+The statusline command still points to
+seamless-claude's `statusline.mjs` (as in step 2
+above). seamless-claude runs first, then passes
+control to your script with the env vars set.
+
+Your script reads the env vars to show compaction
+status alongside its own output:
 
 ```bash
 #!/bin/sh
-# Read seamless status from env
 STATUS="$SEAMLESS_STATUS"
 SHORT="$SEAMLESS_SESSION_SHORT"
-# ... include in your output
+# Show your normal statusline output, plus:
+# compacting → 🔄, ready → ✅ $SHORT, etc.
 ```
 
 If your command exits non-zero or produces no output,
@@ -415,6 +449,43 @@ All data is stored locally under `~/.seamless-claude/`:
 No data leaves your machine beyond the `claude -p`
 call, which uses the same privacy terms as your
 normal Claude Code usage.
+
+## Troubleshooting
+
+**Statusline not showing**
+
+The statusline only appears in Full Mode. Check:
+1. `statusLine` is set in `~/.claude/settings.json`
+2. The path to `statusline.mjs` is correct — run
+   `find ~/.claude/plugins -name statusline.mjs -path '*seamless*'`
+3. Restart Claude Code after changing settings
+
+**Compaction not triggering**
+
+Compaction triggers at 70% context usage (default).
+Check `~/.seamless-claude/status.json` for the
+current state. If `pct` is below the threshold,
+the session hasn't used enough context yet.
+
+**Native compaction still firing**
+
+Add `"CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "100"` to
+the `env` block in `settings.json`. This prevents
+native compaction from competing with seamless-claude.
+
+**Plugin path changed after update**
+
+The plugin cache path includes the version number.
+After updating, re-run the `find` command from
+[Setup step 1](#1-find-the-plugin-path) and update
+`settings.json` with the new path.
+
+**Reverting to default**
+
+Remove the `statusLine` block from `settings.json`,
+remove `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` from `env`,
+and restart Claude Code. The plugin's hooks still
+work in Basic Mode without the statusline.
 
 ## Uninstall
 
