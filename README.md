@@ -186,6 +186,26 @@ active.
 
 For Basic Mode, skip the statusline config entirely.
 
+### Why seamless-claude owns the statusline slot
+
+Ideally, you'd own the statusline and call a
+seamless-claude widget from within your script.
+We'd prefer that architecture too — it's more
+composable, keeps you in control, and means version
+bumps don't break your statusline path.
+
+The constraint is Claude Code's hook model. The
+`statusLine` hook is the only reliable trigger that
+fires after every response. seamless-claude needs
+that trigger to monitor context usage and fire
+background compaction at the right moment. There's
+no generic "AfterResponse" hook available.
+
+If Claude Code adds one, we'll invert the flow so
+your script is primary and seamless-claude becomes
+a callable widget. Until then, the `SEAMLESS_DISPLAY_CMD`
+delegation is the best we can do.
+
 ### Using with an existing statusline
 
 If you already have a custom statusline command,
