@@ -2,8 +2,9 @@
   "name": "seamless-claude",
   "version": "0.1.0",
   "description": "Zero-downtime compaction for Claude Code. Pre-compacts sessions in the background so you never wait for context summarisation.",
-  "author": "Edward Woodcock",
+  "author": {
+    "name": "RemoteCTO"
+  },
   "license": "Apache-2.0",
-  "homepage": "https://github.com/RemoteCTO/seamless-claude",
-  "requires": ["node"]
+  "homepage": "https://github.com/RemoteCTO/seamless-claude"
 }
