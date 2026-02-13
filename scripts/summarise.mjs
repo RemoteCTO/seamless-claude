@@ -50,14 +50,18 @@ function findTranscripts(prefix) {
       const id = f.slice(0, -6)
       if (!id.startsWith(prefix)) continue
       const full = join(dirPath, f)
-      const st = statSync(full)
-      results.push({
-        sessionId: id,
-        path: full,
-        project: dir,
-        size: st.size,
-        modified: st.mtime,
-      })
+      try {
+        const st = statSync(full)
+        results.push({
+          sessionId: id,
+          path: full,
+          project: dir,
+          size: st.size,
+          modified: st.mtime,
+        })
+      } catch {
+        // File vanished between readdir and stat
+      }
     }
   }
   results.sort((a, b) => b.modified - a.modified)

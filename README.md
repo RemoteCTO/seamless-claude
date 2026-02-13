@@ -408,7 +408,7 @@ any historical transcript:
 ```bash
 claude-summarise 97aac477       # by prefix
 claude-summarise --list         # show all
-claude-summarise --list ban     # filter by project
+claude-summarise 97aa --list    # filter by prefix
 claude-summarise 97aa --force   # re-summarise
 ```
 
