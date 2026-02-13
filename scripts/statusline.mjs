@@ -38,6 +38,7 @@ import {
 } from '../lib/state.mjs'
 import {
   formatLine,
+  indicator,
   lastLogLine,
   resolveStatus,
 } from '../lib/statusline.mjs'
@@ -181,6 +182,7 @@ async function main() {
     const ok = runDisplayCmd(rawStdin, {
       SEAMLESS_PCT: String(pct),
       SEAMLESS_STATUS: status,
+      SEAMLESS_INDICATOR: indicator(status),
       SEAMLESS_SESSION_ID: validatedId,
       SEAMLESS_SESSION_SHORT: validatedId.slice(0, 8),
       SEAMLESS_SUMMARY_PATH: summaryPath,

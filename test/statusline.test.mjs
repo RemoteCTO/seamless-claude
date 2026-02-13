@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url'
 import {
   buildBar,
   formatLine,
+  indicator,
   lastLogLine,
   resolveStatus,
 } from '../lib/statusline.mjs'
@@ -199,6 +200,28 @@ describe('statusline', () => {
     })
   })
 
+  describe('indicator', () => {
+    it('returns S for idle', () => {
+      assert.equal(indicator('idle'), 'S')
+    })
+
+    it('returns emoji for compacting', () => {
+      assert.match(indicator('compacting'), /🔄/)
+    })
+
+    it('returns emoji for ready', () => {
+      assert.match(indicator('ready'), /✅/)
+    })
+
+    it('returns emoji for error', () => {
+      assert.match(indicator('error'), /❌/)
+    })
+
+    it('returns S for unknown status', () => {
+      assert.equal(indicator('unknown'), 'S')
+    })
+  })
+
   describe('lastLogLine', () => {
     it('returns last line from multi-line log', () => {
       const log = [
@@ -252,6 +275,7 @@ describe('statusline', () => {
         SEAMLESS_STATE_DIR: tempState,
         SEAMLESS_DATA_DIR: tempData,
         SEAMLESS_STATUS_PATH: join(tempData, 'status.json'),
+        SEAMLESS_DISPLAY_CMD: '',
       }
     }
 
@@ -375,7 +399,8 @@ describe('statusline', () => {
       const e = {
         ...env(),
         SEAMLESS_DISPLAY_CMD:
-          'echo "$SEAMLESS_STATUS:$SEAMLESS_SESSION_SHORT"',
+          'echo "$SEAMLESS_STATUS:$SEAMLESS_SESSION_SHORT' +
+          ':$SEAMLESS_INDICATOR"',
       }
       const out = runScript(
         {
@@ -385,7 +410,7 @@ describe('statusline', () => {
         },
         e,
       )
-      assert.equal(out, `idle:${SESSION_ID.slice(0, 8)}`)
+      assert.equal(out, `idle:${SESSION_ID.slice(0, 8)}:S`)
     })
 
     it('writes state for session', () => {

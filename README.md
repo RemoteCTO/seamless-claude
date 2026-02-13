@@ -87,7 +87,7 @@ find ~/.claude/plugins -name statusline.mjs \
 
 This returns something like:
 ```
-~/.claude/plugins/cache/remotecto-plugins/seamless-claude/0.1.0/scripts/statusline.mjs
+~/.claude/plugins/cache/remotecto-plugins/seamless-claude/0.1.1/scripts/statusline.mjs
 ```
 
 ### 2. Add the statusline to settings.json
@@ -143,10 +143,16 @@ compaction starts. Icons:
 
 | Icon | Status | Meaning |
 |------|--------|---------|
+| — | `idle` | Monitoring, below threshold |
 | 🔄 | `compacting` | Background compaction running |
 | ✅ | `ready` | Summary ready for resume |
 | ❌ | `error` | Compaction failed |
 | ⚠️ | `wrapup` | Context critical, finishing up |
+
+Custom display commands receive a `SEAMLESS_INDICATOR`
+env var that always has a value (`S` when idle, emoji
+otherwise) — useful for confirming the plugin is
+active.
 
 For Basic Mode, skip the statusline config entirely.
 
@@ -167,6 +173,7 @@ Your command receives:
 |---------|---------|-------------|
 | `SEAMLESS_PCT` | `73.5` | Context usage % |
 | `SEAMLESS_STATUS` | `compacting` | idle, compacting, ready, error, wrapup |
+| `SEAMLESS_INDICATOR` | `S` or `🔄` | Short indicator (always set when active) |
 | `SEAMLESS_SESSION_ID` | `a1b2...` | Full session UUID |
 | `SEAMLESS_SESSION_SHORT` | `a1b2c3d4` | First 8 chars |
 | `SEAMLESS_SUMMARY_PATH` | `/path/to/summary.md` | Empty if not ready |
@@ -192,10 +199,11 @@ status alongside its own output:
 
 ```bash
 #!/bin/sh
-STATUS="$SEAMLESS_STATUS"
+INDICATOR="$SEAMLESS_INDICATOR"  # S, 🔄, ✅, ❌, ⚠️
 SHORT="$SEAMLESS_SESSION_SHORT"
 # Show your normal statusline output, plus:
-# compacting → 🔄, ready → ✅ $SHORT, etc.
+# $INDICATOR confirms seamless-claude is active
+# Add $SHORT when compacting/ready/error
 ```
 
 If your command exits non-zero or produces no output,
@@ -364,8 +372,8 @@ The compactor handles failure gracefully:
 - **Retry**: On failure (timeout, bad exit, empty
   result), retries once with a halved transcript
 - **Validation**: Checks the summary contains at
-  least 3 of the 5 expected sections and exceeds
-  500 characters
+  least 3 of the 5 expected sections (case-insensitive)
+  and exceeds 500 characters
 - **Lockfiles**: Prevents duplicate compactions;
   stale locks (>10 min) are automatically cleaned
 - **Output cap**: Resume output capped at 200K
@@ -473,6 +481,15 @@ Add `"CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "100"` to
 the `env` block in `settings.json`. This prevents
 native compaction from competing with seamless-claude.
 
+**"UserPromptSubmit hook error" messages**
+
+Claude Code shows a generic error if any
+UserPromptSubmit hook fails — it doesn't identify
+which plugin. Check
+`~/.seamless-claude/ups-errors.log` for
+seamless-claude errors. If that file is empty or
+missing, the error is from another plugin.
+
 **Plugin path changed after update**
 
 The plugin cache path includes the version number.
@@ -491,6 +508,11 @@ work in Basic Mode without the statusline.
 
 The plugin cleans up after itself when uninstalled.
 All data under `~/.seamless-claude/` is removed.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Please update
+[CHANGELOG.md](CHANGELOG.md) with your changes.
 
 ## Licence
 

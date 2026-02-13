@@ -8,11 +8,27 @@
  * - Error notification when compaction failed
  */
 
-import { existsSync, readFileSync } from 'node:fs'
-import { sessionPaths, validateSessionId } from '../lib/config.mjs'
+import { appendFileSync, existsSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import {
+  DATA_DIR,
+  sessionPaths,
+  validateSessionId,
+} from '../lib/config.mjs'
 import { isLockStale } from '../lib/lockfile.mjs'
 import { readState, writeState } from '../lib/state.mjs'
 import { lastLogLine } from '../lib/statusline.mjs'
+
+const UPS_LOG = join(DATA_DIR, 'ups-errors.log')
+
+function logError(msg) {
+  try {
+    const ts = new Date().toISOString().slice(0, 19)
+    appendFileSync(UPS_LOG, `[${ts}] ${msg}\n`)
+  } catch {
+    // Logging itself failed — nothing we can do
+  }
+}
 
 async function readStdin() {
   const chunks = []
@@ -91,4 +107,7 @@ async function main() {
   }
 }
 
-main().catch(() => process.exit(0))
+main().catch((err) => {
+  logError(err.message || String(err))
+  process.exit(0)
+})
