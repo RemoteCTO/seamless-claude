@@ -5,6 +5,32 @@ here. Format follows [Keep a Changelog][kac].
 
 [kac]: https://keepachangelog.com/en/1.1.0/
 
+## [0.2.0] — 2026-02-13
+
+### Added
+
+- **Custom compaction prompt** (`SEAMLESS_PROMPT_FILE`):
+  override the default prompt entirely with a
+  user-supplied file. Tilde expansion supported.
+  Silent fallback to the default if the file is
+  missing or unreadable.
+- **User Intent section** in the default prompt.
+  Instructs the summariser to preserve the user's
+  original requests, clarifications, and stated
+  constraints verbatim — only direction-shaping
+  messages, not every exchange.
+
+### Changed
+
+- Output validation relaxed when a custom prompt is
+  active: section-name check skipped (custom prompts
+  produce different sections), minimum length check
+  (500 chars) still applies.
+- Default prompt sections renumbered from 5 to 6 to
+  accommodate User Intent.
+- `EXPECTED_SECTIONS` in config.mjs updated to
+  include `User Intent`.
+
 ## [0.1.1] — 2026-02-13
 
 ### Fixed
