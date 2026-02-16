@@ -5,6 +5,37 @@ here. Format follows [Keep a Changelog][kac].
 
 [kac]: https://keepachangelog.com/en/1.1.0/
 
+## [0.2.1] — 2026-02-16
+
+### Fixed
+
+- **Sonnet conversation continuation bug**: Sonnet
+  treated the transcript as a conversation to continue
+  rather than data to summarise, producing short
+  in-character responses instead of structured summaries.
+  Fixed by reframing the system prompt as a
+  "SUMMARISATION TOOL" with explicit anti-roleplay
+  instructions, wrapping the transcript in XML tags to
+  create a clear data boundary, and adding a closing
+  instruction to start with "## Session Summary".
+- **Prompt section numbering removed**: numbered
+  prefixes (`### 1. Session Summary`) replaced with
+  plain headings (`## Session Summary`) to reduce
+  ambiguity for the model.
+
+### Changed
+
+- Transcript input wrapped in `<transcript>` XML tags
+  instead of bare text after a `---` separator. Prevents
+  models from treating USER/ASSISTANT entries as
+  conversational context.
+- System prompt explicitly lists all required section
+  headings by name and instructs the model to start
+  output with "## Session Summary".
+- Default prompt now requests at least 2000 characters
+  of output to prevent terse summaries.
+- Plugin manifest version synced with package.json.
+
 ## [0.2.0] — 2026-02-13
 
 ### Added
