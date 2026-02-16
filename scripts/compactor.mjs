@@ -99,19 +99,18 @@ Include any open questions or blockers.
 - Aim for at least 2000 characters of output
 - Start your response with "## Session Summary"`
 
-const SYSTEM_PROMPT =
+const SYSTEM_BASE =
   'You are a SUMMARISATION TOOL, not a ' +
   'conversational assistant. You receive a ' +
   'transcript of a past coding session as INPUT ' +
   'DATA. Do NOT continue the conversation. Do ' +
   'NOT respond as if you are the assistant in ' +
   'that transcript. ANALYSE the transcript and ' +
-  'produce a structured markdown summary with ' +
-  'these exact headings: "## Session Summary", ' +
-  '"## Technical Context", "## User Intent", ' +
-  '"## Knowledge Extractions", "## Next Steps", ' +
-  '"## Active Context". Start your response ' +
-  'with "## Session Summary".'
+  'produce a structured markdown summary '
+
+const SYSTEM_DEFAULT = `${SYSTEM_BASE}with these exact headings: "## Session Summary", "## Technical Context", "## User Intent", "## Knowledge Extractions", "## Next Steps", "## Active Context". Start your response with "## Session Summary".`
+
+const SYSTEM_CUSTOM = `${SYSTEM_BASE}following the exact format specified in the user message.`
 
 // Custom prompt file overrides default
 let activePrompt = PROMPT
@@ -187,7 +186,7 @@ async function main() {
     '--output-format',
     'text',
     '--system-prompt',
-    SYSTEM_PROMPT,
+    usingCustomPrompt ? SYSTEM_CUSTOM : SYSTEM_DEFAULT,
   ]
 
   let result = null
