@@ -5,6 +5,19 @@ here. Format follows [Keep a Changelog][kac].
 
 [kac]: https://keepachangelog.com/en/1.1.0/
 
+## [0.2.2] — 2026-02-24
+
+### Added
+
+- **Upstream compatibility check** (`npm run compat`):
+  compares installed Claude Code version against a
+  tracked baseline, scans GitHub release notes for
+  keywords matching the integration surface (hooks,
+  statusline, transcripts, `claude -p` flags), and
+  runs a contract smoke test. Reports matches for
+  manual review. Run with `--update` to set a new
+  baseline after reviewing.
+
 ## [0.2.1] — 2026-02-16
 
 ### Fixed
