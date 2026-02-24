@@ -167,6 +167,19 @@ async function main() {
 
   const baseline = readBaseline()
   if (!baseline) {
+    if (UPDATE) {
+      const pkg = JSON.parse(
+        readFileSync(join(ROOT, 'package.json'), 'utf8'),
+      )
+      const data = {
+        version: current,
+        checked_at: new Date().toISOString(),
+        seamless_version: pkg.version,
+      }
+      writeFileSync(BASELINE_PATH, `${JSON.stringify(data, null, 2)}\n`)
+      console.log(`.compat-baseline created at ${current}.\n`)
+      process.exit(0)
+    }
     console.error(
       'No .compat-baseline found. Run with --update' +
         ' to create one.',
