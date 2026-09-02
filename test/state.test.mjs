@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, statSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { after, before, describe, it } from 'node:test'
+import { afterEach, beforeEach, describe, it } from 'node:test'
 import {
   STATE_DIR,
   readState,
@@ -11,15 +12,17 @@ import {
   writeState,
 } from '../lib/state.mjs'
 
+const STATE_MODULE = new URL('../lib/state.mjs', import.meta.url).href
+
 describe('state', () => {
   let tempDir
 
-  before(() => {
+  beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), 'state-test-'))
     process.env.SEAMLESS_STATE_DIR = tempDir
   })
 
-  after(() => {
+  afterEach(() => {
     if (tempDir) {
       rmSync(tempDir, { recursive: true, force: true })
     }
@@ -41,6 +44,56 @@ describe('state', () => {
       assert.equal(state.wrapup_at, null)
       assert.equal(state.wrapup_injected, false)
       assert.equal(state.last_pct, 0)
+    })
+
+    it('returns defaults for empty file', () => {
+      writeFileSync(join(tempDir, `${validId}.json`), '', {
+        mode: 0o600,
+      })
+
+      const state = readState(validId)
+
+      assert.equal(state.session_id, validId)
+      assert.equal(state.compact_at, null)
+      assert.equal(state.last_pct, 0)
+    })
+
+    it('returns defaults for invalid JSON', () => {
+      writeFileSync(join(tempDir, `${validId}.json`), '{invalid', {
+        mode: 0o600,
+      })
+
+      const state = readState(validId)
+
+      assert.equal(state.session_id, validId)
+      assert.equal(state.compact_at, null)
+      assert.equal(state.last_pct, 0)
+    })
+
+    it('surfaces invalid JSON through opt-in diagnostics', () => {
+      writeFileSync(join(tempDir, `${validId}.json`), '{invalid', {
+        mode: 0o600,
+      })
+      const source = [
+        `import { readState } from ${JSON.stringify(STATE_MODULE)};`,
+        `readState(${JSON.stringify(validId)});`,
+      ].join('\n')
+
+      const result = spawnSync(
+        process.execPath,
+        ['--input-type=module', '-e', source],
+        {
+          encoding: 'utf8',
+          env: {
+            ...process.env,
+            NODE_DEBUG: 'seamless-state',
+            SEAMLESS_STATE_DIR: tempDir,
+          },
+        },
+      )
+
+      assert.equal(result.status, 0)
+      assert.match(result.stderr, /Ignoring corrupt state file/)
     })
 
     it('returns saved state after writeState', () => {

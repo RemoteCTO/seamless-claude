@@ -11,7 +11,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { after, before, describe, it } from 'node:test'
+import { afterEach, beforeEach, describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 import {
@@ -260,12 +260,12 @@ describe('statusline', () => {
     let tempState
     let tempData
 
-    before(() => {
+    beforeEach(() => {
       tempState = mkdtempSync(join(tmpdir(), 'sl-state-'))
       tempData = mkdtempSync(join(tmpdir(), 'sl-data-'))
     })
 
-    after(() => {
+    afterEach(() => {
       rmSync(tempState, { recursive: true, force: true })
       rmSync(tempData, { recursive: true, force: true })
     })
@@ -377,6 +377,27 @@ describe('statusline', () => {
         e,
       )
       assert.equal(out, 'custom:42')
+    })
+
+    it('runs the display command when corrupt state precedes failure', () => {
+      const e = {
+        ...env(),
+        SEAMLESS_DISPLAY_CMD: 'printf "custom-statusline"',
+      }
+      const stateFile = join(e.SEAMLESS_STATE_DIR, `${SESSION_ID}.json`)
+      writeFileSync(stateFile, '', { mode: 0o600 })
+      mkdirSync(e.SEAMLESS_STATUS_PATH)
+
+      const out = runScript(
+        {
+          session_id: SESSION_ID,
+          cwd: '/tmp',
+          context_window: { used_percentage: 42 },
+        },
+        e,
+      )
+
+      assert.equal(out, 'custom-statusline')
     })
 
     it('falls back when DISPLAY_CMD fails', () => {

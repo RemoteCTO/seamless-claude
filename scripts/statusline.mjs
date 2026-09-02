@@ -12,14 +12,10 @@
  */
 
 import { spawn, spawnSync } from 'node:child_process'
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  writeFileSync,
-} from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { atomicWriteFileSync } from '../lib/atomic-write.mjs'
 import {
   COMPACT_PCT,
   DATA_DIR,
@@ -45,37 +41,50 @@ import {
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const DISPLAY_CMD = process.env.SEAMLESS_DISPLAY_CMD
+let rawInput = ''
 
 async function readStdin() {
   const chunks = []
   for await (const chunk of process.stdin) {
     chunks.push(chunk)
   }
-  return Buffer.concat(chunks).toString('utf8')
+  rawInput = Buffer.concat(chunks).toString('utf8')
+  return rawInput
 }
 
 function writeStatus(data) {
   mkdirSync(DATA_DIR, { recursive: true })
-  writeFileSync(STATUS_PATH, JSON.stringify(data), {
+  atomicWriteFileSync(STATUS_PATH, JSON.stringify(data), {
     mode: 0o600,
   })
 }
 
 function runDisplayCmd(rawStdin, env) {
-  const result = spawnSync('sh', ['-c', DISPLAY_CMD], {
-    input: rawStdin,
-    env: { ...process.env, ...env },
-    timeout: 5000,
-    maxBuffer: 10 * 1024,
-  })
-  if (result.status === 0 && result.stdout?.length) {
-    process.stdout.write(result.stdout)
-    return true
+  try {
+    const result = spawnSync('sh', ['-c', DISPLAY_CMD], {
+      input: rawStdin,
+      env: { ...process.env, ...env },
+      timeout: 5000,
+      maxBuffer: 10 * 1024,
+    })
+    if (result.status === 0 && result.stdout?.length) {
+      process.stdout.write(result.stdout)
+      return true
+    }
+  } catch {
+    return false
   }
   return false
 }
 
 const FALLBACK = 'seamless: --% ░░░░░░░░░░░░░░░░░░░░'
+
+function showFallback() {
+  if (DISPLAY_CMD && runDisplayCmd(rawInput, {})) {
+    return
+  }
+  console.log(FALLBACK)
+}
 
 async function main() {
   let rawStdin
@@ -84,7 +93,7 @@ async function main() {
     rawStdin = await readStdin()
     input = JSON.parse(rawStdin)
   } catch {
-    console.log(FALLBACK)
+    showFallback()
     return
   }
 
@@ -94,7 +103,7 @@ async function main() {
   const pct = input.context_window?.used_percentage
 
   if (!sessionId || pct == null) {
-    console.log(FALLBACK)
+    showFallback()
     return
   }
 
@@ -102,7 +111,7 @@ async function main() {
   try {
     validatedId = validateSessionId(sessionId)
   } catch {
-    console.log(FALLBACK)
+    showFallback()
     return
   }
 
@@ -194,6 +203,6 @@ async function main() {
 }
 
 main().catch(() => {
-  console.log(FALLBACK)
-  process.exit(0)
+  showFallback()
+  process.exitCode = 0
 })

@@ -9,7 +9,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { after, before, describe, it } from 'node:test'
+import { afterEach, beforeEach, describe, it } from 'node:test'
 import {
   INTENT_PATH,
   clearIntent,
@@ -21,12 +21,12 @@ describe('resume-intent', () => {
   let tmpDir
   let intentPath
 
-  before(() => {
+  beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), 'resume-intent-test-'))
     intentPath = join(tmpDir, 'resume-intent.json')
   })
 
-  after(() => {
+  afterEach(() => {
     rmSync(tmpDir, { recursive: true, force: true })
   })
 
@@ -131,6 +131,14 @@ describe('resume-intent', () => {
   it('readIntent returns null for malformed JSON', () => {
     mkdirSync(tmpDir, { recursive: true })
     writeFileSync(intentPath, 'not valid json', { mode: 0o600 })
+
+    const intent = readIntent('/test/project', { intentPath })
+
+    assert.equal(intent, null)
+  })
+
+  it('readIntent returns null for an empty file', () => {
+    writeFileSync(intentPath, '', { mode: 0o600 })
 
     const intent = readIntent('/test/project', { intentPath })
 
