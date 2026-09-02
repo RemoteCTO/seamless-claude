@@ -11,11 +11,13 @@
  */
 
 import { execSync, spawn } from 'node:child_process'
-import { readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { readFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { atomicWriteFileSync } from '../lib/atomic-write.mjs'
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
+const SCRIPT_PATH = fileURLToPath(import.meta.url)
+const ROOT = join(dirname(SCRIPT_PATH), '..')
 const BASELINE_PATH = join(ROOT, '.compat-baseline')
 const UPDATE = process.argv.includes('--update')
 
@@ -57,6 +59,15 @@ function readBaseline() {
   } catch {
     return null
   }
+}
+
+export function writeBaseline(filePath, data, operations) {
+  atomicWriteFileSync(
+    filePath,
+    `${JSON.stringify(data, null, 2)}\n`,
+    {},
+    operations,
+  )
 }
 
 function compareVersions(a, b) {
@@ -176,7 +187,7 @@ async function main() {
         checked_at: new Date().toISOString(),
         seamless_version: pkg.version,
       }
-      writeFileSync(BASELINE_PATH, `${JSON.stringify(data, null, 2)}\n`)
+      writeBaseline(BASELINE_PATH, data)
       console.log(`.compat-baseline created at ${current}.\n`)
       process.exit(0)
     }
@@ -249,12 +260,14 @@ async function main() {
       checked_at: new Date().toISOString(),
       seamless_version: pkg.version,
     }
-    writeFileSync(BASELINE_PATH, `${JSON.stringify(data, null, 2)}\n`)
+    writeBaseline(BASELINE_PATH, data)
     console.log(`.compat-baseline updated to ${current}.\n`)
   }
 }
 
-main().catch((err) => {
-  console.error(`Error: ${err.message}`)
-  process.exit(1)
-})
+if (process.argv[1] && resolve(process.argv[1]) === SCRIPT_PATH) {
+  main().catch((err) => {
+    console.error(`Error: ${err.message}`)
+    process.exit(1)
+  })
+}
